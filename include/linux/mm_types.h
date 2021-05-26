@@ -339,24 +339,24 @@ struct core_state {
 struct kioctx_table;
 struct mm_struct {
 	struct {
-		struct vm_area_struct *mmap;		/* list of VMAs */
-		struct rb_root mm_rb;
+		struct vm_area_struct *mmap;//虚拟内存区域链表
+		struct rb_root mm_rb;//虚拟内存区域红黑树	
 		u64 vmacache_seqnum;                   /* per-thread vmacache */
 #ifdef CONFIG_MMU
-		unsigned long (*get_unmapped_area) (struct file *filp,
+		unsigned long (*get_unmapped_area) (struct file *filp,//在内存映射区域找到一块没有映射的区域
 				unsigned long addr, unsigned long len,
 				unsigned long pgoff, unsigned long flags);
 #endif
-		unsigned long mmap_base;	/* base of mmap area */
+		unsigned long mmap_base;//内存映射区域的起始地址
 		unsigned long mmap_legacy_base;	/* base of mmap area in bottom-up allocations */
 #ifdef CONFIG_HAVE_ARCH_COMPAT_MMAP_BASES
 		/* Base adresses for compatible mmap() */
 		unsigned long mmap_compat_base;
 		unsigned long mmap_compat_legacy_base;
 #endif
-		unsigned long task_size;	/* size of task vm space */
+		unsigned long task_size;//用户虚拟地址空间长度
 		unsigned long highest_vm_end;	/* highest vma end address */
-		pgd_t * pgd;
+		pgd_t * pgd;//指向页全局目录，也就是第一级页表
 
 		/**
 		 * @mm_users: The number of users including userspace.
@@ -367,7 +367,7 @@ struct mm_struct {
 		 * @mm_count (which may then free the &struct mm_struct if
 		 * @mm_count also drops to 0).
 		 */
-		atomic_t mm_users;
+		atomic_t mm_users;//共享一个用户虚拟地址空间的进程数量，也就是线程包含的进程数量
 
 		/**
 		 * @mm_count: The number of references to &struct mm_struct
@@ -376,39 +376,45 @@ struct mm_struct {
 		 * Use mmgrab()/mmdrop() to modify. When this drops to 0, the
 		 * &struct mm_struct is freed.
 		 */
-		atomic_t mm_count;
+		atomic_t mm_count;//内存描述符的引用计数
 
 #ifdef CONFIG_MMU
-		atomic_long_t pgtables_bytes;	/* PTE page table pages */
+		atomic_long_t pgtables_bytes;//PTE页表页大小
 #endif
-		int map_count;			/* number of VMAs */
+		int map_count;//虚拟内存映射数量
 
-		spinlock_t page_table_lock; /* Protects page tables and some
+		spinlock_t page_table_lock;//保护页表的锁
+		/* Protects page tables and some
 					     * counters
 					     */
 		struct rw_semaphore mmap_sem;
 
-		struct list_head mmlist; /* List of maybe swapped mm's.	These
+		struct list_head mmlist; //链表指向可能进行了交换的内存
+		/* List of maybe swapped mm's.	These
 					  * are globally strung together off
 					  * init_mm.mmlist, and are protected
 					  * by mmlist_lock
 					  */
 
 
-		unsigned long hiwater_rss; /* High-watermark of RSS usage */
-		unsigned long hiwater_vm;  /* High-water virtual memory usage */
+		unsigned long hiwater_rss;//RSS的高水位使用情况
+		unsigned long hiwater_vm;//高水位虚拟内存使用情况
 
-		unsigned long total_vm;	   /* Total pages mapped */
-		unsigned long locked_vm;   /* Pages that have PG_mlocked set */
-		unsigned long pinned_vm;   /* Refcount permanently increased */
-		unsigned long data_vm;	   /* VM_WRITE & ~VM_SHARED & ~VM_STACK */
-		unsigned long exec_vm;	   /* VM_EXEC & ~VM_WRITE & ~VM_STACK */
-		unsigned long stack_vm;	   /* VM_STACK */
+		unsigned long total_vm;//进程地址空间的映射页数
+		unsigned long locked_vm;//被锁住不能换出的页数
+		unsigned long pinned_vm;//不能换出也不能移动的页数
+		unsigned long data_vm;//存放数据的页数
+		unsigned long exec_vm;//存放可执行文件的页数
+		unsigned long stack_vm;//存放栈的页数
 		unsigned long def_flags;
 
 		spinlock_t arg_lock; /* protect the below fields */
+		
+		//可执行程序代码段的起始地址和结束地址，数据段的起始地址和结束地址
 		unsigned long start_code, end_code, start_data, end_data;
+		//堆的起始地址，堆的当前地址（也是结束地址），栈的起始地址（栈的结束地址在寄存器的栈顶指针中）
 		unsigned long start_brk, brk, start_stack;
+		//参数字符串的起始地址和结束地址，环境变量的其实地址和结束地址
 		unsigned long arg_start, arg_end, env_start, env_end;
 
 		unsigned long saved_auxv[AT_VECTOR_SIZE]; /* for /proc/PID/auxv */
@@ -422,7 +428,7 @@ struct mm_struct {
 		struct linux_binfmt *binfmt;
 
 		/* Architecture-specific MM context */
-		mm_context_t context;
+		mm_context_t context;//处理器架构特定的内存瓜茉莉上下文
 
 		unsigned long flags; /* Must use atomic bitops to access */
 
