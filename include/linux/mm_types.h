@@ -264,14 +264,16 @@ struct vm_userfaultfd_ctx {};
 struct vm_area_struct {
 	/* The first cache line has the info for VMA tree walking. */
 
+	//这两个成员分别保存该虚拟内存空间的首地址和末地址后第一个字节的地址
 	unsigned long vm_start;		/* Our start address within vm_mm. */
 	unsigned long vm_end;		/* The first byte after our end address
 					   within vm_mm. */
 
 	/* linked list of VM areas per task, sorted by address */
-	struct vm_area_struct *vm_next, *vm_prev;
+	struct vm_area_struct *vm_next, *vm_prev;//分别是VMA链表的前后成员
 
-	struct rb_node vm_rb;
+	struct rb_node vm_rb;//如果使用链表结构，会影响他搜索的速度，采用红黑树可以解决此问题，
+	//每一个进程结构体里面的mm_struct都会创建一颗红黑树，将VMA作为一个节点加入红黑树中，提升搜索速率	
 
 	/*
 	 * Largest free memory gap in bytes to the left of this VMA.
@@ -283,14 +285,20 @@ struct vm_area_struct {
 
 	/* Second cache line starts here. */
 
-	struct mm_struct *vm_mm;	/* The address space we belong to. */
-	pgprot_t vm_page_prot;		/* Access permissions of this VMA. */
-	unsigned long vm_flags;		/* Flags, see mm.h. */
+	struct mm_struct *vm_mm;	//内存描述符，也就是虚拟内存区域所属的用户虚拟地址空间
+	pgprot_t vm_page_prot;		//保护位，也就是访问权限
+	
+	/* Flags, see mm.h
+	#define VM_NONE		0x00000000
+	#define VM_READ		0x00000001	
+	#define VM_WRITE	0x00000002
+	#define VM_EXEC		0x00000004
+	#define VM_SHARED	0x00000008		*/
+	unsigned long vm_flags;		//保护标志位
 
-	/*
-	 * For areas with an address space and backing store,
-	 * linkage into the address_space->i_mmap interval tree.
-	 */
+
+	//为了支持查询一个文件区间被映射到哪些虚拟内存区域，
+	//把一个文件映射的所有虚拟内存区域加入该文件地址空间结构体的i_mmap成员（address_space->i_mmap）所指向的设备树。
 	struct {
 		struct rb_node rb;
 		unsigned long rb_subtree_last;
@@ -302,18 +310,21 @@ struct vm_area_struct {
 	 * can only be in the i_mmap tree.  An anonymous MAP_PRIVATE, stack
 	 * or brk vma (with NULL file) can only be in an anon_vma list.
 	 */
+	 //把虚拟内存区域关联的所有的anon_vma实例串联起来，
+	 //一个虚拟内存区域会关联到父进程的anon_vma实例和自己的anon_vma实例
 	struct list_head anon_vma_chain; /* Serialized by mmap_sem &
 					  * page_table_lock */
+	//指向一个anon_vma实例，结构体anon_vma用来组织匿名页被映射到的所有的虚拟地址空间
 	struct anon_vma *anon_vma;	/* Serialized by page_table_lock */
 
 	/* Function pointers to deal with this struct. */
-	const struct vm_operations_struct *vm_ops;
+	const struct vm_operations_struct *vm_ops;//虚拟内存操作函数集合，定义的结构体在mm.h文件中
 
 	/* Information about our backing store: */
-	unsigned long vm_pgoff;		/* Offset (within vm_file) in PAGE_SIZE
+	unsigned long vm_pgoff;//文件偏移，单位是页
 					   units */
-	struct file * vm_file;		/* File we map to (can be NULL). */
-	void * vm_private_data;		/* was vm_pte (shared mem) */
+	struct file * vm_file;//指向内存区的文件映射，如果是私有的匿名映射，该成员为NULL
+	void * vm_private_data;//指向内存区的私有数据
 
 	atomic_long_t swap_readahead_info;
 #ifndef CONFIG_MMU
