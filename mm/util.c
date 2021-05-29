@@ -348,18 +348,18 @@ unsigned long vm_mmap_pgoff(struct file *file, unsigned long addr,
 	unsigned long ret;
 	struct mm_struct *mm = current->mm;
 	unsigned long populate;
-	LIST_HEAD(uf);
+	LIST_HEAD(uf);//初始化userfaultfd链表
 
-	ret = security_mmap_file(file, prot, flag);
+	ret = security_mmap_file(file, prot, flag);//security linux安全相关的，一般不会开，返回值为0
 	if (!ret) {
-		if (down_write_killable(&mm->mmap_sem))
+		if (down_write_killable(&mm->mmap_sem))//以写者身份申请读写信号量
 			return -EINTR;
-		ret = do_mmap_pgoff(file, addr, len, prot, flag, pgoff,
+		ret = do_mmap_pgoff(file, addr, len, prot, flag, pgoff,//创建内存映射主要工作在此函数中进行
 				    &populate, &uf);
-		up_write(&mm->mmap_sem);
-		userfaultfd_unmap_complete(mm, &uf);
+		up_write(&mm->mmap_sem);//释放读写信号量
+		userfaultfd_unmap_complete(mm, &uf);//等待userfaultfd处理完成
 		if (populate)
-			mm_populate(ret, populate);
+			mm_populate(ret, populate);//如果调用者要求把也锁定在内存中，或要求
 	}
 	return ret;
 }

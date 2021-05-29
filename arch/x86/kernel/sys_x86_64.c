@@ -88,16 +88,20 @@ static int __init control_va_addr_alignment(char *str)
 }
 __setup("align_va_addr", control_va_addr_alignment);
 
+//X86架构的mmap系统调用函数
 SYSCALL_DEFINE6(mmap, unsigned long, addr, unsigned long, len,
 		unsigned long, prot, unsigned long, flags,
 		unsigned long, fd, unsigned long, off)
 {
 	long error;
 	error = -EINVAL;
+	
+	//检查偏移是不是页的整数倍，如果不是页的整数倍，直接返回-EINVAL
+	//如果是页得整数倍，那么后面会把偏移转换成页为单位的偏移，然后继续往下走
 	if (off & ~PAGE_MASK)
 		goto out;
 
-	error = ksys_mmap_pgoff(addr, len, prot, flags, fd, off >> PAGE_SHIFT);
+	error = ksys_mmap_pgoff(addr, len, prot, flags, fd, off >> PAGE_SHIFT);//1.内存映射主要工作函数
 out:
 	return error;
 }

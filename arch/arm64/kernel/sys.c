@@ -29,14 +29,17 @@
 #include <asm/cpufeature.h>
 #include <asm/syscall.h>
 
+//arm64架构mmap系统调用函数
 SYSCALL_DEFINE6(mmap, unsigned long, addr, unsigned long, len,
 		unsigned long, prot, unsigned long, flags,
 		unsigned long, fd, off_t, off)
 {
+	//检查偏移是不是页的整数倍，如果不是页的整数倍，直接返回-EINVAL
+	//如果是也得整数倍，那么把偏移转换成页为单位的偏移，然后继续往下走
 	if (offset_in_page(off) != 0)
 		return -EINVAL;
 
-	return ksys_mmap_pgoff(addr, len, prot, flags, fd, off >> PAGE_SHIFT);
+	return ksys_mmap_pgoff(addr, len, prot, flags, fd, off >> PAGE_SHIFT);//1.内存映射主要工作函数
 }
 
 SYSCALL_DEFINE1(arm64_personality, unsigned int, personality)
