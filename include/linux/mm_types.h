@@ -352,7 +352,7 @@ struct mm_struct {
 	struct {
 		struct vm_area_struct *mmap;//虚拟内存区域链表
 		struct rb_root mm_rb;//虚拟内存区域红黑树	
-		u64 vmacache_seqnum;                   /* per-thread vmacache */
+		u64 vmacache_seqnum; //信号量，表示vma是否在cache中/* per-thread vmacache */
 #ifdef CONFIG_MMU
 		unsigned long (*get_unmapped_area) (struct file *filp,//在内存映射区域找到一块没有映射的区域
 				unsigned long addr, unsigned long len,

@@ -297,7 +297,9 @@ static inline void arch_unmap(struct mm_struct *mm, struct vm_area_struct *vma,
 	 * overwhelm the overhead of getting this unlikely()
 	 * consistently wrong.
 	 */
+	//判断CPU中有没有MPX，或者进程中有没有使用MPX
 	if (unlikely(cpu_feature_enabled(X86_FEATURE_MPX)))
+		//读取一个很少热的cacheline，通知mpx
 		mpx_notify_unmap(mm, vma, start, end);
 }
 

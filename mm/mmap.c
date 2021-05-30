@@ -2554,17 +2554,17 @@ static void remove_vma_list(struct mm_struct *mm, struct vm_area_struct *vma)
 	unsigned long nr_accounted = 0;
 
 	/* Update high watermark before we lower total_vm */
-	update_hiwater_vm(mm);
+	update_hiwater_vm(mm);//更新高水位线上的内存使用情况
 	do {
 		long nrpages = vma_pages(vma);
 
 		if (vma->vm_flags & VM_ACCOUNT)
 			nr_accounted += nrpages;
 		vm_stat_account(mm, vma->vm_flags, -nrpages);
-		vma = remove_vma(vma);
+		vma = remove_vma(vma);//从进程的mm_struct的vm_area_struct链表移除删除的vma
 	} while (vma);
-	vm_unacct_memory(nr_accounted);
-	validate_mm(mm);
+	vm_unacct_memory(nr_accounted);//减少已经使用的虚拟内存空间
+	validate_mm(mm);//如果开启debug则查看mm_struct的状态，否则极易啥也不干
 }
 
 /*
@@ -2579,13 +2579,15 @@ static void unmap_region(struct mm_struct *mm,
 	struct vm_area_struct *next = prev ? prev->vm_next : mm->mmap;
 	struct mmu_gather tlb;
 
-	lru_add_drain();
-	tlb_gather_mmu(&tlb, mm, start, end);
-	update_hiwater_rss(mm);
-	unmap_vmas(&tlb, vma, start, end);
+	lru_add_drain();//当前CPU实现缓存的刷新
+	tlb_gather_mmu(&tlb, mm, start, end);//初始化一个mmu_gather结构体，用于拆解页表
+	update_hiwater_rss(mm);//更新高水位线上的rss，也就是已经占用的物理页页数
+	unmap_vmas(&tlb, vma, start, end);//清空线性地址空间的所有页表项
+	
+	//回收上一步已经清空的进程页表
 	free_pgtables(&tlb, vma, prev ? prev->vm_end : FIRST_USER_ADDRESS,
 				 next ? next->vm_start : USER_PGTABLES_CEILING);
-	tlb_finish_mmu(&tlb, start, end);
+	tlb_finish_mmu(&tlb, start, end);//刷新TLB，释放页框
 }
 
 /*
@@ -2602,7 +2604,7 @@ detach_vmas_to_be_unmapped(struct mm_struct *mm, struct vm_area_struct *vma,
 	insertion_point = (prev ? &prev->vm_next : &mm->mmap);
 	vma->vm_prev = NULL;
 	do {
-		vma_rb_erase(vma, &mm->mm_rb);
+		vma_rb_erase(vma, &mm->mm_rb);//从红黑树中删除一个个vma
 		mm->map_count--;
 		tail_vma = vma;
 		vma = vma->vm_next;
@@ -2616,7 +2618,7 @@ detach_vmas_to_be_unmapped(struct mm_struct *mm, struct vm_area_struct *vma,
 	tail_vma->vm_next = NULL;
 
 	/* Kill the cache */
-	vmacache_invalidate(mm);
+	vmacache_invalidate(mm);//释放vma cache 信号量
 }
 
 /*
@@ -2710,18 +2712,20 @@ int do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
 	if ((offset_in_page(start)) || start > TASK_SIZE || len > TASK_SIZE-start)
 		return -EINVAL;
 
+	//要ummap的长度也是page size对齐的
 	len = PAGE_ALIGN(len);
 	if (len == 0)
 		return -EINVAL;
 
 	/* Find the first overlapping VMA */
-	vma = find_vma(mm, start);
+	vma = find_vma(mm, start);//找到起始地址是落在哪个vma内
 	if (!vma)
 		return 0;
 	prev = vma->vm_prev;
 	/* we have  start < vma->vm_end  */
 
 	/* if it doesn't overlap, we have nothing.. */
+	//如果要释放空间的结束地址都小于vma的起始地址，说明这两者就没有重叠，直接退出
 	end = start + len;
 	if (vma->vm_start >= end)
 		return 0;
@@ -2733,6 +2737,7 @@ int do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
 	 * unmapped vm_area_struct will remain in use: so lower split_vma
 	 * places tmp vma above, and higher split_vma places tmp vma below.
 	 */
+	//如果要释放的内存起始地址在vma中间，不在开头的位置
 	if (start > vma->vm_start) {
 		int error;
 
@@ -2741,9 +2746,11 @@ int do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
 		 * not exceed its limit; but let map_count go just above
 		 * its limit temporarily, to help free resources as expected.
 		 */
+		//确保从map_count不会超过限制
 		if (end < vma->vm_end && mm->map_count >= sysctl_max_map_count)
 			return -ENOMEM;
-
+		
+		//我们要在start处分裂vma成两份，因为我们只需要释放start后面的内存
 		error = __split_vma(mm, vma, start, 0);
 		if (error)
 			return error;
@@ -2751,9 +2758,10 @@ int do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
 	}
 
 	/* Does it split the last one? */
-	last = find_vma(mm, end);
+	last = find_vma(mm, end);//找到结束地址是落在哪个vma内
 	if (last && end > last->vm_start) {
-		int error = __split_vma(mm, last, end, 1);
+		//我们要在last处分裂vma成两份，因为我们只需要释放last前面的内存
+		int error = __split_vma(mm, last, end, 1);//分裂内存区域
 		if (error)
 			return error;
 	}
@@ -2777,12 +2785,12 @@ int do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
 	/*
 	 * unlock any mlock()ed ranges before detaching vmas
 	 */
-	if (mm->locked_vm) {
+	if (mm->locked_vm) {//如果这段要释放的空间是lock的
 		struct vm_area_struct *tmp = vma;
 		while (tmp && tmp->vm_start < end) {
 			if (tmp->vm_flags & VM_LOCKED) {
 				mm->locked_vm -= vma_pages(tmp);
-				munlock_vma_pages_all(tmp);
+				munlock_vma_pages_all(tmp);//解除锁定
 			}
 			tmp = tmp->vm_next;
 		}
@@ -2791,13 +2799,13 @@ int do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
 	/*
 	 * Remove the vma's, and unmap the actual pages
 	 */
-	detach_vmas_to_be_unmapped(mm, vma, prev, end);
-	unmap_region(mm, vma, prev, start, end);
+	detach_vmas_to_be_unmapped(mm, vma, prev, end);//把要删除的vma区域移出红黑树
+	unmap_region(mm, vma, prev, start, end);//针对删除的目标，在进程的页表和cpu缓存中删除映射
 
-	arch_unmap(mm, vma, start, end);
+	arch_unmap(mm, vma, start, end);//进行处理器架构的特定操作
 
 	/* Fix up all other VM information */
-	remove_vma_list(mm, vma);
+	remove_vma_list(mm, vma);//从进程虚拟内存区域中删除要删除的vma区域
 
 	return 0;
 }
@@ -2806,21 +2814,21 @@ int vm_munmap(unsigned long start, size_t len)
 {
 	int ret;
 	struct mm_struct *mm = current->mm;
-	LIST_HEAD(uf);
+	LIST_HEAD(uf);//初始化userfaultfd链表
 
-	if (down_write_killable(&mm->mmap_sem))
+	if (down_write_killable(&mm->mmap_sem))//以写者身份申请读写信号量
 		return -EINTR;
 
 	ret = do_munmap(mm, start, len, &uf);
-	up_write(&mm->mmap_sem);
-	userfaultfd_unmap_complete(mm, &uf);
+	up_write(&mm->mmap_sem);//释放读写信号量
+	userfaultfd_unmap_complete(mm, &uf);//等待userfaultfd处理完成
 	return ret;
 }
 EXPORT_SYMBOL(vm_munmap);
 
 SYSCALL_DEFINE2(munmap, unsigned long, addr, size_t, len)
 {
-	profile_munmap(addr);
+	profile_munmap(addr);//使用内核通知链唤醒munmap_notifier
 	return vm_munmap(addr, len);
 }
 
