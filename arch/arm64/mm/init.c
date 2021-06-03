@@ -368,9 +368,11 @@ void __init arm64_memblock_init(void)
 	const s64 linear_region_size = -(s64)PAGE_OFFSET;
 
 	/* Handle linux,usable-memory-range property */
+	//解析设备树文件的内存节点
 	fdt_enforce_memory_region();
 
 	/* Remove memory above our supported physical address size */
+	//删除超出我们支持的物理地址大小的内存
 	memblock_remove(1ULL << PHYS_MASK_SHIFT, ULLONG_MAX);
 
 	/*
@@ -383,6 +385,7 @@ void __init arm64_memblock_init(void)
 	/*
 	 * Select a suitable value for the base of physical memory.
 	 */
+	//全局变量memstart_addr记录了内存的起始物理地址
 	memstart_addr = round_down(memblock_start_of_DRAM(),
 				   ARM64_MEMSTART_ALIGN);
 
@@ -391,6 +394,7 @@ void __init arm64_memblock_init(void)
 	 * linear mapping. Take care not to clip the kernel which may be
 	 * high in memory.
 	 */
+	//把线性映射区无法覆盖的物理内存范围从memblock中删除
 	memblock_remove(max_t(u64, memstart_addr + linear_region_size,
 			__pa_symbol(_end)), ULLONG_MAX);
 	if (memstart_addr + linear_region_size < memblock_end_of_DRAM()) {
@@ -405,9 +409,10 @@ void __init arm64_memblock_init(void)
 	 * high up in memory, add back the kernel region that must be accessible
 	 * via the linear mapping.
 	 */
+	//如果设置了内存限制，要根据限制使用内存
 	if (memory_limit != PHYS_ADDR_MAX) {
-		memblock_mem_limit_remove_map(memory_limit);
-		memblock_add(__pa_symbol(_text), (u64)(_end - _text));
+		memblock_mem_limit_remove_map(memory_limit);//把超出限制的内存移除
+		memblock_add(__pa_symbol(_text), (u64)(_end - _text));//添加可以使用的内存
 	}
 
 	if (IS_ENABLED(CONFIG_BLK_DEV_INITRD) && initrd_start) {
@@ -460,6 +465,7 @@ void __init arm64_memblock_init(void)
 	 * Register the kernel text, kernel data, initrd, and initial
 	 * pagetables with memblock.
 	 */
+	//把内核镜像占用的内存添加到memblock的预留区中，表示预留了不再分配出去
 	memblock_reserve(__pa_symbol(_text), _end - _text);
 #ifdef CONFIG_BLK_DEV_INITRD
 	if (initrd_start) {
@@ -471,6 +477,7 @@ void __init arm64_memblock_init(void)
 	}
 #endif
 
+	//扫描设备树中的保留内存区域并添加到memblock的预留区域中
 	early_init_fdt_scan_reserved_mem();
 
 	/* 4GB maximum for 32-bit only capable devices */

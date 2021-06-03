@@ -310,7 +310,7 @@ void __init setup_arch(char **cmdline_p)
 
 	xen_early_init();
 	efi_init();
-	arm64_memblock_init();
+	arm64_memblock_init();//arm64的引导内存分配器的初始化
 
 	paging_init();
 
