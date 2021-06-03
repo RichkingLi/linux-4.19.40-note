@@ -43,12 +43,12 @@ extern unsigned long long max_possible_pfn;
  * @list: list entry in the linked list ordered by the memory addresses
  */
 typedef struct bootmem_data {
-	unsigned long node_min_pfn;
-	unsigned long node_low_pfn;
-	void *node_bootmem_map;
-	unsigned long last_end_off;
-	unsigned long hint_idx;
-	struct list_head list;
+	unsigned long node_min_pfn;//节点内存的起始物理页号
+	unsigned long node_low_pfn;//节点内存的结束物理页号
+	void *node_bootmem_map;//位图指针，每个物理页对应一位，如果物理页被分配则对应位置一。
+	unsigned long last_end_off;//最后一次分配的页面内的偏移量（字节）;如果为0，则使用的页面已满
+	unsigned long hint_idx;//最后一次分配的物理页，下次优先考虑从这个物理页分配
+	struct list_head list;//按内存地址排序链表头
 } bootmem_data_t;
 
 extern bootmem_data_t bootmem_node_data[];

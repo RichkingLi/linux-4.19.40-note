@@ -28,10 +28,10 @@
  * @MEMBLOCK_NOMAP: don't add to kernel direct mapping
  */
 enum memblock_flags {
-	MEMBLOCK_NONE		= 0x0,	/* No special request */
-	MEMBLOCK_HOTPLUG	= 0x1,	/* hotpluggable region */
-	MEMBLOCK_MIRROR		= 0x2,	/* mirrored region */
-	MEMBLOCK_NOMAP		= 0x4,	/* don't add to kernel direct mapping */
+	MEMBLOCK_NONE		= 0x0,//表示没有特殊要求区域
+	MEMBLOCK_HOTPLUG	= 0x1,//表示可以热插拔的区域	
+	MEMBLOCK_MIRROR		= 0x2,//表示镜像的区域，将内存数据做两份复制，分配放在主内存和镜像内存中	
+	MEMBLOCK_NOMAP		= 0x4,//表示不添加到内核直接映射区域，即线性映射区
 };
 
 /**
@@ -42,11 +42,11 @@ enum memblock_flags {
  * @nid: NUMA node id
  */
 struct memblock_region {
-	phys_addr_t base;
-	phys_addr_t size;
-	enum memblock_flags flags;
+	phys_addr_t base;//起始物理地址
+	phys_addr_t size;//长度
+	enum memblock_flags flags;//内存区域标志属性
 #ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
-	int nid;
+	int nid;//节点编号
 #endif
 };
 
@@ -59,11 +59,11 @@ struct memblock_region {
  * @name: the memory type symbolic name
  */
 struct memblock_type {
-	unsigned long cnt;
-	unsigned long max;
-	phys_addr_t total_size;
-	struct memblock_region *regions;
-	char *name;
+	unsigned long cnt;//区域数量
+	unsigned long max;//分配区域的大小
+	phys_addr_t total_size;//所有区域的大小
+	struct memblock_region *regions;//区域数组指向区域数组
+	char *name;//内存类型符号名
 };
 
 /**
@@ -75,12 +75,12 @@ struct memblock_type {
  * @physmem: all physical memory
  */
 struct memblock {
-	bool bottom_up;  /* is bottom up direction? */
-	phys_addr_t current_limit;
-	struct memblock_type memory;
-	struct memblock_type reserved;
+	bool bottom_up;//表示内存分配方式，真：从低地址向上分配，假：从高地址向下分配
+	phys_addr_t current_limit;//可分配内存的最大物理地址
+	struct memblock_type memory;//可用物理内存区域（包括已分配和未分配的）
+	struct memblock_type reserved;//预留物理内存区域（预留起来不可用，例子：设备树）
 #ifdef CONFIG_HAVE_MEMBLOCK_PHYS_MAP
-	struct memblock_type physmem;
+	struct memblock_type physmem;//所有的物理内存区域
 #endif
 };
 

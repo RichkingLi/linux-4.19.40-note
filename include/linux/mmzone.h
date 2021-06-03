@@ -622,17 +622,18 @@ extern struct page *mem_map;
  */
 struct bootmem_data;
 typedef struct pglist_data {
-	struct zone node_zones[MAX_NR_ZONES];
-	struct zonelist node_zonelists[MAX_ZONELISTS];
-	int nr_zones;
+	struct zone node_zones[MAX_NR_ZONES];//内存区域数组
+	struct zonelist node_zonelists[MAX_ZONELISTS];//备用区域数组
+
+	int nr_zones;//该节点包含的内存区域数量
 #ifdef CONFIG_FLAT_NODE_MEM_MAP	/* means !SPARSEMEM */
-	struct page *node_mem_map;
+	struct page *node_mem_map;//指向物理页描述符数组
 #ifdef CONFIG_PAGE_EXTENSION
-	struct page_ext *node_page_ext;
+	struct page_ext *node_page_ext;//页的扩展属性
 #endif
 #endif
 #ifndef CONFIG_NO_BOOTMEM
-	struct bootmem_data *bdata;
+	struct bootmem_data *bdata;//早期内存管理器
 #endif
 #if defined(CONFIG_MEMORY_HOTPLUG) || defined(CONFIG_DEFERRED_STRUCT_PAGE_INIT)
 	/*

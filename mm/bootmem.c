@@ -437,12 +437,12 @@ void __init free_bootmem(unsigned long physaddr, unsigned long size)
 {
 	unsigned long start, end;
 
-	kmemleak_free_part_phys(physaddr, size);
+	kmemleak_free_part_phys(physaddr, size);//释放映射的内存
 
-	start = PFN_UP(physaddr);
-	end = PFN_DOWN(physaddr + size);
+	start = PFN_UP(physaddr);//查找到起始位置的物理页
+	end = PFN_DOWN(physaddr + size);//查找到结束为止的物理页
 
-	mark_bootmem(start, end, 0, 0);
+	mark_bootmem(start, end, 0, 0);//把释放的物理页对应的位清零
 }
 
 /**

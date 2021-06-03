@@ -578,7 +578,7 @@ int __init_memblock memblock_add_range(struct memblock_type *type,
 	if (!size)
 		return 0;
 
-	/* special case for empty array */
+	
 	if (type->regions[0].size == 0) {
 		WARN_ON(type->cnt != 1 || type->total_size);
 		type->regions[0].base = base;
@@ -597,18 +597,20 @@ repeat:
 	base = obase;
 	nr_new = 0;
 
+	//遍历所有内存块，与新的内存块比较
 	for_each_memblock_type(idx, type, rgn) {
 		phys_addr_t rbase = rgn->base;
 		phys_addr_t rend = rbase + rgn->size;
 
-		if (rbase >= end)
+		if (rbase >= end)//新加入的内存块的结束地址已经到了则遍历结束
 			break;
-		if (rend <= base)
+		if (rend <= base)//即加入的内存块的起始地址还没到则遍历下一块
 			continue;
 		/*
 		 * @rgn overlaps.  If it separates the lower part of new
 		 * area, insert that portion.
 		 */
+		//如果新加入的内存起始地址已经到了，但是还没到遍历的内存则插入
 		if (rbase > base) {
 #ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
 			WARN_ON(nid != memblock_get_region_node(rgn));
@@ -616,6 +618,7 @@ repeat:
 			WARN_ON(flags != rgn->flags);
 			nr_new++;
 			if (insert)
+				//添加内存区域，也就是填充struct memblock_region而已
 				memblock_insert_region(type, idx++, base,
 						       rbase - base, nid,
 						       flags);
@@ -631,7 +634,8 @@ repeat:
 			memblock_insert_region(type, idx, base, end - base,
 					       nid, flags);
 	}
-
+	
+	//如果需要加入的内存块个数为0则返回，不需要第二次遍历执行加入操作
 	if (!nr_new)
 		return 0;
 
@@ -639,6 +643,8 @@ repeat:
 	 * If this was the first round, resize array and repeat for actual
 	 * insertions; otherwise, merge and return.
 	 */
+	//第一次会进入，判断内存区域块是否达到上限，是则退出，否则回到repeat
+	//因为insert参数原因，第一次没有真正插入，第二次才会真正的插入
 	if (!insert) {
 		while (type->cnt + nr_new > type->max)
 			if (memblock_double_array(type, obase, size) < 0)
@@ -646,7 +652,7 @@ repeat:
 		insert = true;
 		goto repeat;
 	} else {
-		memblock_merge_regions(type);
+		memblock_merge_regions(type);//合并相邻且没有缝隙的内存区域
 		return 0;
 	}
 }
@@ -686,7 +692,7 @@ int __init_memblock memblock_add(phys_addr_t base, phys_addr_t size)
 
 	memblock_dbg("memblock_add: [%pa-%pa] %pF\n",
 		     &base, &end, (void *)_RET_IP_);
-
+	//直接调用memblock_add_range将内存区块添加到memblock.memory进行管理
 	return memblock_add_range(&memblock.memory, base, size, MAX_NUMNODES, 0);
 }
 
@@ -772,10 +778,12 @@ static int __init_memblock memblock_remove_range(struct memblock_type *type,
 	int start_rgn, end_rgn;
 	int i, ret;
 
+	//要删除的内存区域内存区内的内存块存在重叠部分，把这部分需要独立出来
 	ret = memblock_isolate_range(type, base, size, &start_rgn, &end_rgn);
 	if (ret)
 		return ret;
 
+	//根据要删除内存区的索引号，删除内存区块
 	for (i = end_rgn - 1; i >= start_rgn; i--)
 		memblock_remove_region(type, i);
 	return 0;
@@ -799,6 +807,7 @@ int __init_memblock memblock_free(phys_addr_t base, phys_addr_t size)
 	memblock_dbg("   memblock_free: [%pa-%pa] %pF\n",
 		     &base, &end, (void *)_RET_IP_);
 
+	//通知释放部分内存块
 	kmemleak_free_part_phys(base, size);
 	return memblock_remove_range(&memblock.reserved, base, size);
 }
@@ -1241,13 +1250,16 @@ static phys_addr_t __init memblock_alloc_range_nid(phys_addr_t size,
 	if (!align)
 		align = SMP_CACHE_BYTES;
 
+	//在给定范围和节点内找一块空区域
 	found = memblock_find_in_range_node(size, align, start, end, nid,
 					    flags);
+	//memblock_reserve是把找到的空区域添加到memblock.reserved中，表示已经用了
 	if (found && !memblock_reserve(found, size)) {
 		/*
 		 * The min_count is set to 0 so that memblock allocations are
 		 * never reported as leaks.
 		 */
+		//一个内存块分配物理内存的通知
 		kmemleak_alloc_phys(found, size, 0, 0);
 		return found;
 	}
