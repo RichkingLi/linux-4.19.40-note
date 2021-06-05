@@ -346,9 +346,9 @@ enum zone_type {
 	 */
 	ZONE_HIGHMEM,
 #endif
-	ZONE_MOVABLE,
+	ZONE_MOVABLE,//可移动区域，一个伪内存区域用来防止内存碎片
 #ifdef CONFIG_ZONE_DEVICE
-	ZONE_DEVICE,
+	ZONE_DEVICE,//设备区域，支持持久设备热插拔的内存区域
 #endif
 	__MAX_NR_ZONES
 
@@ -360,7 +360,7 @@ struct zone {
 	/* Read-mostly fields */
 
 	/* zone watermarks, access with *_wmark_pages(zone) macros */
-	unsigned long watermark[NR_WMARK];
+	unsigned long watermark[NR_WMARK];//页分配器使用的水线
 
 	unsigned long nr_reserved_highatomic;
 
@@ -373,13 +373,13 @@ struct zone {
 	 * recalculated at runtime if the sysctl_lowmem_reserve_ratio sysctl
 	 * changes.
 	 */
-	long lowmem_reserve[MAX_NR_ZONES];
+	long lowmem_reserve[MAX_NR_ZONES];//页分配器使用，当前区域保留多少页不能借给高的区域
 
 #ifdef CONFIG_NUMA
 	int node;
 #endif
-	struct pglist_data	*zone_pgdat;
-	struct per_cpu_pageset __percpu *pageset;
+	struct pglist_data	*zone_pgdat;//指向内存节点的pglist_data实例
+	struct per_cpu_pageset __percpu *pageset;//每处理器页集合
 
 #ifndef CONFIG_SPARSEMEM
 	/*
@@ -390,7 +390,7 @@ struct zone {
 #endif /* CONFIG_SPARSEMEM */
 
 	/* zone_start_pfn == zone_start_paddr >> PAGE_SHIFT */
-	unsigned long		zone_start_pfn;
+	unsigned long		zone_start_pfn;//当前区域的起始物理页号
 
 	/*
 	 * spanned_pages is the total pages spanned by the zone, including
@@ -433,11 +433,11 @@ struct zone {
 	 * adjust_managed_page_count() should be used instead of directly
 	 * touching zone->managed_pages and totalram_pages.
 	 */
-	unsigned long		managed_pages;
-	unsigned long		spanned_pages;
-	unsigned long		present_pages;
+	unsigned long		managed_pages;//伙伴分配器管理的物理页数量
+	unsigned long		spanned_pages;//当前区域跨越的总页数，包括空洞
+	unsigned long		present_pages;//当前区域存在的物理页的数量，不包括空洞
 
-	const char		*name;
+	const char		*name;//区域名称
 
 #ifdef CONFIG_MEMORY_ISOLATION
 	/*
@@ -459,10 +459,10 @@ struct zone {
 	ZONE_PADDING(_pad1_)
 
 	/* free areas of different sizes */
-	struct free_area	free_area[MAX_ORDER];
+	struct free_area	free_area[MAX_ORDER];//不同长度的空闲区域
 
 	/* zone flags, see below */
-	unsigned long		flags;
+	unsigned long		flags;//区域属性标志
 
 	/* Primarily protects free_area */
 	spinlock_t		lock;
@@ -569,15 +569,15 @@ static inline bool zone_intersects(struct zone *zone,
 #define MAX_ZONES_PER_ZONELIST (MAX_NUMNODES * MAX_NR_ZONES)
 
 enum {
-	ZONELIST_FALLBACK,	/* zonelist with fallback */
+	ZONELIST_FALLBACK,//包含所有内存节点的的备用区域列表
 #ifdef CONFIG_NUMA
 	/*
 	 * The NUMA zonelists are doubled because we need zonelists that
 	 * restrict the allocations to a single node for __GFP_THISNODE.
 	 */
-	ZONELIST_NOFALLBACK,	/* zonelist without fallback (__GFP_THISNODE) */
+	ZONELIST_NOFALLBACK,//只包含当前节点的备用区域列表
 #endif
-	MAX_ZONELISTS
+	MAX_ZONELISTS//表示备用区域列表数量
 };
 
 /*
@@ -585,8 +585,8 @@ enum {
  * here to avoid dereferences into large structures and lookups of tables
  */
 struct zoneref {
-	struct zone *zone;	/* Pointer to actual zone */
-	int zone_idx;		/* zone_idx(zoneref->zone) */
+	struct zone *zone;//指向内存区域数据结构
+	int zone_idx;//成员zone指向内存区域的类型
 };
 
 /*
@@ -623,7 +623,7 @@ extern struct page *mem_map;
 struct bootmem_data;
 typedef struct pglist_data {
 	struct zone node_zones[MAX_NR_ZONES];//内存区域数组
-	struct zonelist node_zonelists[MAX_ZONELISTS];//备用区域数组
+	struct zonelist node_zonelists[MAX_ZONELISTS];//MAX_ZONELISTS个备用区域数组
 
 	int nr_zones;//该节点包含的内存区域数量
 #ifdef CONFIG_FLAT_NODE_MEM_MAP	/* means !SPARSEMEM */
@@ -633,7 +633,7 @@ typedef struct pglist_data {
 #endif
 #endif
 #ifndef CONFIG_NO_BOOTMEM
-	struct bootmem_data *bdata;//早期内存管理器
+	struct bootmem_data *bdata;//引导内存管理器
 #endif
 #if defined(CONFIG_MEMORY_HOTPLUG) || defined(CONFIG_DEFERRED_STRUCT_PAGE_INIT)
 	/*
@@ -649,11 +649,11 @@ typedef struct pglist_data {
 	 */
 	spinlock_t node_size_lock;
 #endif
-	unsigned long node_start_pfn;
-	unsigned long node_present_pages; /* total number of physical pages */
-	unsigned long node_spanned_pages; /* total size of physical page
+	unsigned long node_start_pfn;//该节点的起始物理页号
+	unsigned long node_present_pages;//物理页总数
+	unsigned long node_spanned_pages;//物理页范围总长度，包括空洞
 					     range, including holes */
-	int node_id;
+	int node_id;//节点标识符
 	wait_queue_head_t kswapd_wait;
 	wait_queue_head_t pfmemalloc_wait;
 	struct task_struct *kswapd;	/* Protected by

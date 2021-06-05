@@ -3279,15 +3279,16 @@ get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
 	 * Scan zonelist, looking for a zone with enough free.
 	 * See also __cpuset_node_allowed() comment in kernel/cpuset.c.
 	 */
+	//扫描备用区域列表中每一个满足条件的区域：区域类型小于等于首选区域类型
 	for_next_zone_zonelist_nodemask(zone, z, ac->zonelist, ac->high_zoneidx,
 								ac->nodemask) {
 		struct page *page;
 		unsigned long mark;
 
-		if (cpusets_enabled() &&
-			(alloc_flags & ALLOC_CPUSET) &&
-			!__cpuset_zone_allowed(zone, gfp_mask))
-				continue;
+		if (cpusets_enabled() &&			//如果编译了cpuset功能		
+			(alloc_flags & ALLOC_CPUSET) &&	//如果设置了ALLOC_CPUSET
+			!__cpuset_zone_allowed(zone, gfp_mask))	//如果cpu设置了不允许从当前区域分配内存
+				continue;							//那么不允许从这个区域分配，进入下个循环
 		/*
 		 * When allocating a page cache page for writing, we
 		 * want to get it from a node that is within its dirty
@@ -3307,7 +3308,8 @@ get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
 		 * will require awareness of nodes in the
 		 * dirty-throttling and the flusher threads.
 		 */
-		if (ac->spread_dirty_pages) {
+		if (ac->spread_dirty_pages) {//如果设置了写标志位，表示要分配写缓存
+			//那么要检查内存脏页数量是否超出限制，超过限制就不能从这个区域分配
 			if (last_pgdat_dirty_limit == zone->zone_pgdat)
 				continue;
 
@@ -3317,7 +3319,8 @@ get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
 			}
 		}
 
-		mark = zone->watermark[alloc_flags & ALLOC_WMARK_MASK];
+		mark = zone->watermark[alloc_flags & ALLOC_WMARK_MASK];//检查允许分配水线
+		//判断（区域空闲页-申请页数）是否小于水线
 		if (!zone_watermark_fast(zone, order, mark,
 				       ac_classzone_idx(ac), alloc_flags)) {
 			int ret;
@@ -3327,6 +3330,7 @@ get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
 			 * Watermark failed for this zone, but see if we can
 			 * grow this zone if it contains deferred pages.
 			 */
+			//如果检查达不到水线要求，但是该区域包含延迟页面，那么检查延迟页面是否足够大 
 			if (static_branch_unlikely(&deferred_pages)) {
 				if (_deferred_grow_zone(zone, order))
 					goto try_this_zone;
@@ -3334,13 +3338,16 @@ get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
 #endif
 			/* Checked here to keep the fast path fast */
 			BUILD_BUG_ON(ALLOC_NO_WATERMARKS < NR_WMARK);
+			//如果没有水线要求，直接选择该区域
 			if (alloc_flags & ALLOC_NO_WATERMARKS)
 				goto try_this_zone;
 
+			//如果没有开启节点回收功能或者当前节点和首选节点距离大于回收距离
 			if (node_reclaim_mode == 0 ||
 			    !zone_allows_reclaim(ac->preferred_zoneref->zone, zone))
 				continue;
 
+			//从节点回收“没有映射到进程虚拟地址空间的内存页”，然后检查水线
 			ret = node_reclaim(zone->zone_pgdat, gfp_mask, order);
 			switch (ret) {
 			case NODE_RECLAIM_NOSCAN:
@@ -3359,16 +3366,19 @@ get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
 			}
 		}
 
-try_this_zone:
+try_this_zone://满足上面的条件了，开始分配
+		//从当前区域分配页
 		page = rmqueue(ac->preferred_zoneref->zone, zone, order,
 				gfp_mask, alloc_flags, ac->migratetype);
 		if (page) {
+			//分配成功，初始化页
 			prep_new_page(page, order, gfp_mask, alloc_flags);
 
 			/*
 			 * If this is a high-order atomic allocation then check
 			 * if the pageblock should be reserved for the future
 			 */
+			//如果这是一个高阶的内存并且是ALLOC_HARDER，需要检查以后是否需要保留
 			if (unlikely(order && (alloc_flags & ALLOC_HARDER)))
 				reserve_highatomic_pageblock(page, zone, order);
 
@@ -3376,6 +3386,7 @@ try_this_zone:
 		} else {
 #ifdef CONFIG_DEFERRED_STRUCT_PAGE_INIT
 			/* Try again if zone has deferred pages */
+			//如果分配失败，延迟分配
 			if (static_branch_unlikely(&deferred_pages)) {
 				if (_deferred_grow_zone(zone, order))
 					goto try_this_zone;
@@ -4088,6 +4099,7 @@ retry_cpuset:
 	compaction_retries = 0;
 	no_progress_loops = 0;
 	compact_priority = DEF_COMPACT_PRIORITY;
+	//后面可能会检查cpuset是否允许当前进程从哪些内存节点申请页
 	cpuset_mems_cookie = read_mems_allowed_begin();
 
 	/*
@@ -4095,6 +4107,7 @@ retry_cpuset:
 	 * kswapd needs to be woken up, and to avoid the cost of setting up
 	 * alloc_flags precisely. So we do that now.
 	 */
+	//把分配标志位转化为内部的分配标志位
 	alloc_flags = gfp_to_alloc_flags(gfp_mask);
 
 	/*
@@ -4103,11 +4116,13 @@ retry_cpuset:
 	 * there was a cpuset modification and we are retrying - otherwise we
 	 * could end up iterating over non-eligible zones endlessly.
 	 */
+	//获取首选的内存区域，因为在快速路径中使用了不同的节点掩码，避免再次遍历不合格的区域。
 	ac->preferred_zoneref = first_zones_zonelist(ac->zonelist,
 					ac->high_zoneidx, ac->nodemask);
 	if (!ac->preferred_zoneref->zone)
 		goto nopage;
-
+	
+	//异步回收页，唤醒kswapd内核线程进行页面回收
 	if (gfp_mask & __GFP_KSWAPD_RECLAIM)
 		wake_all_kswapds(order, gfp_mask, ac);
 
@@ -4115,6 +4130,7 @@ retry_cpuset:
 	 * The adjusted alloc_flags might result in immediate success, so try
 	 * that first
 	 */
+	//调整alloc_flags后可能会立即申请成功，所以先尝试一下
 	page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac);
 	if (page)
 		goto got_pg;
@@ -4128,10 +4144,12 @@ retry_cpuset:
 	 * Don't try this for allocations that are allowed to ignore
 	 * watermarks, as the ALLOC_NO_WATERMARKS attempt didn't yet happen.
 	 */
+	//申请阶数大于0，不可移动的位于高阶的，忽略水位线的
 	if (can_direct_reclaim &&
 			(costly_order ||
 			   (order > 0 && ac->migratetype != MIGRATE_MOVABLE))
 			&& !gfp_pfmemalloc_allowed(gfp_mask)) {
+		//直接页面回收，然后进行页面分配
 		page = __alloc_pages_direct_compact(gfp_mask, order,
 						alloc_flags, ac,
 						INIT_COMPACT_PRIORITY,
@@ -4160,15 +4178,18 @@ retry_cpuset:
 			 * sync compaction could be very expensive, so keep
 			 * using async compaction.
 			 */
+			//同步压缩非常昂贵，所以继续使用异步压缩
 			compact_priority = INIT_COMPACT_PRIORITY;
 		}
 	}
 
 retry:
 	/* Ensure kswapd doesn't accidentally go to sleep as long as we loop */
+	//如果页回收线程意外睡眠则再次唤醒
 	if (gfp_mask & __GFP_KSWAPD_RECLAIM)
 		wake_all_kswapds(order, gfp_mask, ac);
 
+	//如果调用者承若给我们紧急内存使用，我们就忽略水线
 	reserve_flags = __gfp_pfmemalloc_flags(gfp_mask);
 	if (reserve_flags)
 		alloc_flags = reserve_flags;
@@ -4178,6 +4199,7 @@ retry:
 	 * ignored. These allocations are high priority and system rather than
 	 * user oriented.
 	 */
+	//如果可以忽略内存策略，则重置nodemask和zonelist
 	if (!(alloc_flags & ALLOC_CPUSET) || reserve_flags) {
 		ac->nodemask = NULL;
 		ac->preferred_zoneref = first_zones_zonelist(ac->zonelist,
@@ -4185,11 +4207,13 @@ retry:
 	}
 
 	/* Attempt with potentially adjusted zonelist and alloc_flags */
+	//尝试使用可能调整的区域备用列表和分配标志
 	page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac);
 	if (page)
 		goto got_pg;
 
 	/* Caller is not willing to reclaim, we can't balance anything */
+	//如果不可以直接回收，则申请失败
 	if (!can_direct_reclaim)
 		goto nopage;
 
@@ -4198,18 +4222,21 @@ retry:
 		goto nopage;
 
 	/* Try direct reclaim and then allocating */
+	//直接页面回收，然后进行页面分配
 	page = __alloc_pages_direct_reclaim(gfp_mask, order, alloc_flags, ac,
 							&did_some_progress);
 	if (page)
 		goto got_pg;
 
 	/* Try direct compaction and then allocating */
+	//进行页面压缩，然后进行页面分配
 	page = __alloc_pages_direct_compact(gfp_mask, order, alloc_flags, ac,
 					compact_priority, &compact_result);
 	if (page)
 		goto got_pg;
 
 	/* Do not loop if specifically requested */
+	//如果调用者要求不要重试，则放弃
 	if (gfp_mask & __GFP_NORETRY)
 		goto nopage;
 
@@ -4217,9 +4244,11 @@ retry:
 	 * Do not retry costly high order allocations unless they are
 	 * __GFP_RETRY_MAYFAIL
 	 */
+	//不要重试代价高昂的高阶分配，除非它们是__GFP_RETRY_MAYFAIL
 	if (costly_order && !(gfp_mask & __GFP_RETRY_MAYFAIL))
 		goto nopage;
-
+	
+	//重新尝试回收页
 	if (should_reclaim_retry(gfp_mask, order, ac, alloc_flags,
 				 did_some_progress > 0, &no_progress_loops))
 		goto retry;
@@ -4230,6 +4259,7 @@ retry:
 	 * implementation of the compaction depends on the sufficient amount
 	 * of free memory (see __compaction_suitable)
 	 */
+	//如果申请阶数大于0，判断是否需要重新尝试压缩
 	if (did_some_progress > 0 &&
 			should_compact_retry(ac, order, alloc_flags,
 				compact_result, &compact_priority,
@@ -4238,21 +4268,25 @@ retry:
 
 
 	/* Deal with possible cpuset update races before we start OOM killing */
+	//如果cpuset允许修改内存节点申请就修改
 	if (check_retry_cpuset(cpuset_mems_cookie, ac))
 		goto retry_cpuset;
 
 	/* Reclaim has failed us, start killing things */
+	//使用oom选择一个进程杀死
 	page = __alloc_pages_may_oom(gfp_mask, order, ac, &did_some_progress);
 	if (page)
 		goto got_pg;
 
 	/* Avoid allocations with no watermarks from looping endlessly */
+	//如果当前进程是oom选择的进程，并且忽略了水线，则放弃申请
 	if (tsk_is_oom_victim(current) &&
 	    (alloc_flags == ALLOC_OOM ||
 	     (gfp_mask & __GFP_NOMEMALLOC)))
 		goto nopage;
 
 	/* Retry as long as the OOM killer is making progress */
+	//如果OOM杀手正在取得进展，再试一次
 	if (did_some_progress) {
 		no_progress_loops = 0;
 		goto retry;
@@ -4296,6 +4330,7 @@ nopage:
 		 * could deplete whole memory reserves which would just make
 		 * the situation worse
 		 */
+		//允许它们访问内存备用列表
 		page = __alloc_pages_cpuset_fallback(gfp_mask, order, ALLOC_HARDER, ac);
 		if (page)
 			goto got_pg;
@@ -4385,7 +4420,7 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 
 	finalise_ac(gfp_mask, &ac);
 
-	/* First allocation attempt */
+	/* First allocation attempt */ //快速路径分配函数
 	page = get_page_from_freelist(alloc_mask, order, alloc_flags, &ac);
 	if (likely(page))
 		goto out;
@@ -4406,6 +4441,7 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 	if (unlikely(ac.nodemask != nodemask))
 		ac.nodemask = nodemask;
 
+	//快速路径分配失败，会调用下面的慢速分配函数
 	page = __alloc_pages_slowpath(alloc_mask, order, &ac);
 
 out:
