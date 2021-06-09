@@ -2916,6 +2916,7 @@ redo:
 	 * data is retrieved via this pointer. If we are on the same cpu
 	 * during the cmpxchg then the free will succeed.
 	 */
+	//获得缓冲区当前cpu活动对象
 	do {
 		tid = this_cpu_read(s->cpu_slab->tid);
 		c = raw_cpu_ptr(s->cpu_slab);
@@ -2925,10 +2926,10 @@ redo:
 	/* Same with comment on barrier() in slab_alloc_node() */
 	barrier();
 
-	if (likely(page == c->page)) {
+	if (likely(page == c->page)) {//要释放的对象位于活动对象链表中
 		set_freepointer(s, tail_obj, c->freelist);
 
-		if (unlikely(!this_cpu_cmpxchg_double(
+		if (unlikely(!this_cpu_cmpxchg_double(//直接移动活动对象的空闲链表即可
 				s->cpu_slab->freelist, s->cpu_slab->tid,
 				c->freelist, tid,
 				head, next_tid(tid)))) {
@@ -2938,6 +2939,7 @@ redo:
 		}
 		stat(s, FREE_FASTPATH);
 	} else
+		// 否则进行慢速释放 
 		__slab_free(s, page, head, tail_obj, cnt, addr);
 
 }
