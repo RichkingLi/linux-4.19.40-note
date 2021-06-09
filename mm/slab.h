@@ -453,31 +453,32 @@ static inline void slab_post_alloc_hook(struct kmem_cache *s, gfp_t flags,
 /*
  * The slab lists for all objects.
  */
+//每个NUMA内存节点中的slab链表 
 struct kmem_cache_node {
-	spinlock_t list_lock;
+	spinlock_t list_lock;//保存本描述符的自旋锁
 
 #ifdef CONFIG_SLAB
-	struct list_head slabs_partial;	/* partial list first, better asm code */
-	struct list_head slabs_full;
-	struct list_head slabs_free;
-	unsigned long total_slabs;	/* length of all slab lists */
-	unsigned long free_slabs;	/* length of free slab list only */
-	unsigned long free_objects;
-	unsigned int free_limit;
-	unsigned int colour_next;	/* Per-node cache coloring */
-	struct array_cache *shared;	/* shared per node */
-	struct alien_cache **alien;	/* on other nodes */
+	struct list_head slabs_partial;	//指向半满的slab对象链表，分配slab对象第一回时间找他
+	struct list_head slabs_full;//指向全满的slab对象链表
+	struct list_head slabs_free;//指向全空的slab对象链表，可回收
+	unsigned long total_slabs;//全部slab链表的长度
+	unsigned long free_slabs;//空闲slab链表的长度，也就是slabs_free的长度
+	unsigned long free_objects;//可分配的对象数
+	unsigned int free_limit;//free对象上限，超过此数，将页面还给伙伴系统
+	unsigned int colour_next;//当前节点的可用着色值
+	struct array_cache *shared;//当前内存节点的共享缓冲池
+	struct alien_cache **alien;//其他内存节点的共享缓冲池
 	unsigned long next_reap;	/* updated without locking */
-	int free_touched;		/* updated without locking */
+	int free_touched;//表示是否用过slab
 #endif
 
 #ifdef CONFIG_SLUB
-	unsigned long nr_partial;
-	struct list_head partial;
+	unsigned long nr_partial;// 半满链表中，有多少个对象
+	struct list_head partial;//半满链表头
 #ifdef CONFIG_SLUB_DEBUG
-	atomic_long_t nr_slabs;
-	atomic_long_t total_objects;
-	struct list_head full;
+	atomic_long_t nr_slabs;//该node中，所有slab数量
+	atomic_long_t total_objects;//该node中，所有对象的数量
+	struct list_head full;//满链表头
 #endif
 #endif
 

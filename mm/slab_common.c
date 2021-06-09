@@ -360,6 +360,7 @@ struct kmem_cache *find_mergeable(unsigned int size, unsigned int align,
 	return NULL;
 }
 
+//创建slab分配器的主函数
 static struct kmem_cache *create_cache(const char *name,
 		unsigned int object_size, unsigned int align,
 		slab_flags_t flags, unsigned int useroffset,
@@ -373,10 +374,12 @@ static struct kmem_cache *create_cache(const char *name,
 		useroffset = usersize = 0;
 
 	err = -ENOMEM;
+	//先分配一个kmem_cache管理结构
 	s = kmem_cache_zalloc(kmem_cache, GFP_KERNEL);
 	if (!s)
 		goto out;
 
+	//初始化kmem_cache管理结构
 	s->name = name;
 	s->size = s->object_size = object_size;
 	s->align = align;
@@ -387,13 +390,14 @@ static struct kmem_cache *create_cache(const char *name,
 	err = init_memcg_params(s, memcg, root_cache);
 	if (err)
 		goto out_free_cache;
-
+	
+	//创建slab缓存
 	err = __kmem_cache_create(s, flags);
 	if (err)
 		goto out_free_cache;
 
-	s->refcount = 1;
-	list_add(&s->list, &slab_caches);
+	s->refcount = 1;//设置引用计数
+	list_add(&s->list, &slab_caches);//添加到全局链表中
 	memcg_link_cache(s);
 out:
 	if (err)
@@ -443,13 +447,13 @@ kmem_cache_create_usercopy(const char *name,
 	const char *cache_name;
 	int err;
 
-	get_online_cpus();
+	get_online_cpus();//增加对热插拨相关数据结构的引用
 	get_online_mems();
 	memcg_get_cache_ids();
 
-	mutex_lock(&slab_mutex);
+	mutex_lock(&slab_mutex);//获取锁，保护全局的slab链表。
 
-	err = kmem_cache_sanity_check(name, size);
+	err = kmem_cache_sanity_check(name, size);//遍历链表，看看是否已经创建了同名的slab
 	if (err) {
 		goto out_unlock;
 	}
@@ -474,16 +478,18 @@ kmem_cache_create_usercopy(const char *name,
 		usersize = useroffset = 0;
 
 	if (!usersize)
+		//看看是否可以与已经创建的slab合并
 		s = __kmem_cache_alias(name, size, align, flags, ctor);
 	if (s)
 		goto out_unlock;
 
-	cache_name = kstrdup_const(name, GFP_KERNEL);
+	cache_name = kstrdup_const(name, GFP_KERNEL);//复制slab名称
 	if (!cache_name) {
 		err = -ENOMEM;
 		goto out_unlock;
 	}
 
+	//真正干活的在这里。
 	s = create_cache(cache_name, size,
 			 calculate_alignment(flags, align, size),
 			 flags, useroffset, usersize, ctor, NULL, NULL);
@@ -492,7 +498,7 @@ kmem_cache_create_usercopy(const char *name,
 		kfree_const(cache_name);
 	}
 
-out_unlock:
+out_unlock://解锁,递减引用值
 	mutex_unlock(&slab_mutex);
 
 	memcg_put_cache_ids();
