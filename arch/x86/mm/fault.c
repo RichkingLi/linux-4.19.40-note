@@ -1211,18 +1211,19 @@ static noinline void
 __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 		unsigned long address)
 {
-	struct vm_area_struct *vma;
-	struct task_struct *tsk;
-	struct mm_struct *mm;
+	struct vm_area_struct *vma;//定义结构体指针变量，表示一个独立的虚拟内存空间
+	struct task_struct *tsk;//进程描述符
+	struct mm_struct *mm;//进程中的内存描述符
 	vm_fault_t fault, major = 0;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 	u32 pkey;
 
-	tsk = current;
-	mm = tsk->mm;
+	tsk = current;//获取当前cpu正在运行的进程的进程描述符
+	mm = tsk->mm;//然后回去进程中的内存描述符
 
-	prefetchw(&mm->mmap_sem);
+	prefetchw(&mm->mmap_sem);//提前获取读写信号量
 
+	//mmio不应该发生缺页，通常都会ioremap到vmalloc区，然后进行访问，所以不应该在这里分配
 	if (unlikely(kmmio_fault(regs, address)))
 		return;
 
@@ -1239,36 +1240,40 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	 * (error_code & 4) == 0, and that the fault was not a
 	 * protection error (error_code & 9) == 0.
 	 */
-	if (unlikely(fault_in_kernel_space(address))) {
-		if (!(error_code & (X86_PF_RSVD | X86_PF_USER | X86_PF_PROT))) {
-			if (vmalloc_fault(address) >= 0)
+	if (unlikely(fault_in_kernel_space(address))) {//如果缺页地址位于内核空间， 
+		if (!(error_code & (X86_PF_RSVD | X86_PF_USER | X86_PF_PROT))) {//但是异常不发生在内核
+			if (vmalloc_fault(address) >= 0)//如果缺页地址是在vmalloc区，则返回不分配，而是内核主页表向进程页表同步数据
 				return;
 		}
 
 		/* Can handle a stale RO->RW TLB: */
+		//检查是否是旧的TLB（页表缓存）导致的假的缺页异常（TLB延迟flush导致的，因为提前flush会有比较大的性能代价）
 		if (spurious_fault(error_code, address))
 			return;
 
 		/* kprobes don't want to hook the spurious faults: */
+		//判断是否kprobes引起的虚假错误
 		if (kprobes_fault(regs))
 			return;
 		/*
 		 * Don't take the mm semaphore here. If we fixup a prefetch
 		 * fault we could otherwise deadlock:
 		 */
+		//异常位于内核态，触发内核异常，但是位于vmalloc的缺页异常前面已经处理过了，所以如果不是缺页导致的，那就是内核有其他异常了，需要处理返回
 		bad_area_nosemaphore(regs, error_code, address, NULL);
 
 		return;
 	}
 
 	/* kprobes don't want to hook the spurious faults: */
+	//现在是用户态的异常，也要判断是否kprobes引起的虚假错误
 	if (unlikely(kprobes_fault(regs)))
 		return;
 
 	if (unlikely(error_code & X86_PF_RSVD))
 		pgtable_bad(regs, error_code, address);
 
-	if (unlikely(smap_violation(error_code, regs))) {
+	if (unlikely(smap_violation(error_code, regs))) {//smap的保护特性，阻止了访问内核态虚拟地址
 		bad_area_nosemaphore(regs, error_code, address, NULL);
 		return;
 	}
@@ -1277,6 +1282,7 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	 * If we're in an interrupt, have no user context or are running
 	 * in a region with pagefaults disabled then we must not take the fault
 	 */
+	//如果我们处于中断状态，没有用户上下文，或者在页面错误被禁用的区域中运行，则不能接收错误，需要处理返回
 	if (unlikely(faulthandler_disabled() || !mm)) {
 		bad_area_nosemaphore(regs, error_code, address, NULL);
 		return;
@@ -1289,6 +1295,7 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	 * User-mode registers count as a user access even for any
 	 * potential system fault or CPU buglet:
 	 */
+	//开中断，这种情况下，是安全的，可以缩短因缺页异常导致的关中断时长 
 	if (user_mode(regs)) {
 		local_irq_enable();
 		error_code |= X86_PF_USER;
@@ -1321,6 +1328,7 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	 * validate the source. If this is invalid we can skip the address
 	 * space check, thus avoiding the deadlock:
 	 */
+	//避免内核中的其他错误导致mmap_sem死锁
 	if (unlikely(!down_read_trylock(&mm->mmap_sem))) {
 		if (!(error_code & X86_PF_USER) &&
 		    !search_exception_tables(regs->ip)) {
@@ -1338,14 +1346,15 @@ retry:
 		might_sleep();
 	}
 
+	//在当前进程的地址空间中查找发生异常的地址对应的vma
 	vma = find_vma(mm, address);
-	if (unlikely(!vma)) {
+	if (unlikely(!vma)) {//如果找不到，则释放锁并且返回
 		bad_area(regs, error_code, address);
 		return;
 	}
-	if (likely(vma->vm_start <= address))
+	if (likely(vma->vm_start <= address))//如果找到了，而且虚拟地址位于vma有效范围，则为正常的缺页异常，请求分配内存
 		goto good_area;
-	if (unlikely(!(vma->vm_flags & VM_GROWSDOWN))) {
+	if (unlikely(!(vma->vm_flags & VM_GROWSDOWN))) {//虚拟地址不在vma有效范围，则是进程访问了非法地址，需要处理后返回
 		bad_area(regs, error_code, address);
 		return;
 	}
@@ -1356,12 +1365,14 @@ retry:
 		 * and pusha to work. ("enter $65535, $31" pushes
 		 * 32 pointers and then decrements %sp by 65535.)
 		 */
+		//如果虚拟地址位于堆栈区附近 
 		if (unlikely(address + 65536 + 32 * sizeof(unsigned long) < regs->sp)) {
 			bad_area(regs, error_code, address);
 			return;
 		}
 	}
-	if (unlikely(expand_stack(vma, address))) {
+	//扩展堆栈区，堆栈区的虚拟地址是动态分配的，不是固定的
+	if (unlikely(expand_stack(vma, address))) {//扩展失败，处理后返回
 		bad_area(regs, error_code, address);
 		return;
 	}
@@ -1370,7 +1381,7 @@ retry:
 	 * Ok, we have a good vm_area for this memory access, so
 	 * we can handle it..
 	 */
-good_area:
+good_area://正常的缺页异常处理，进行请求调页，分配物理内存
 	if (unlikely(access_error(error_code, vma))) {
 		bad_area_access_error(regs, error_code, address, vma);
 		return;
@@ -1391,8 +1402,11 @@ good_area:
 	 * Thus we have to be careful about not touching vma after handling the
 	 * fault, so we read the pkey beforehand.
 	 */
-	pkey = vma_pkey(vma);
+	pkey = vma_pkey(vma);//在处理故障后，我们必须小心不要接触vma，所以我们预先读取pkey
+	
+	//然后进入真正的分配处理，这个是所有处理器共用的部分，专门处理用户空间的缺页异常
 	fault = handle_mm_fault(vma, address, flags);
+	//下面是分配后的一些判断和处理
 	major |= fault & VM_FAULT_MAJOR;
 
 	/*
@@ -1436,7 +1450,7 @@ good_area:
 		perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MIN, 1, regs, address);
 	}
 
-	check_v8086_mode(regs, address, tsk);
+	check_v8086_mode(regs, address, tsk);//vm8模式，为了兼容老的cpu做一些相关的检查
 }
 NOKPROBE_SYMBOL(__do_page_fault);
 
@@ -1460,14 +1474,15 @@ trace_page_fault_entries(unsigned long address, struct pt_regs *regs,
 dotraplinkage void notrace
 do_page_fault(struct pt_regs *regs, unsigned long error_code)
 {
+	//缺页异常的地址默认存放于CR2寄存器中，x86硬件决定，需要读取他
 	unsigned long address = read_cr2(); /* Get the faulting address */
 	enum ctx_state prev_state;
 
-	prev_state = exception_enter();
+	prev_state = exception_enter();//进入异常处理的状态
 	if (trace_pagefault_enabled())
 		trace_page_fault_entries(address, regs, error_code);
 
-	__do_page_fault(regs, error_code, address);
-	exception_exit(prev_state);
+	__do_page_fault(regs, error_code, address);//重要的缺页异常处理函数
+	exception_exit(prev_state);//退出异常处理的状态
 }
 NOKPROBE_SYMBOL(do_page_fault);

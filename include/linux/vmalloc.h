@@ -31,25 +31,29 @@ struct notifier_block;		/* in notifier.h */
 #define IOREMAP_MAX_ORDER	(7 + PAGE_SHIFT)	/* 128 pages */
 #endif
 
+//虚拟内存块实例
 struct vm_struct {
-	struct vm_struct	*next;
-	void			*addr;
-	unsigned long		size;
-	unsigned long		flags;
-	struct page		**pages;
-	unsigned int		nr_pages;
-	phys_addr_t		phys_addr;
-	const void		*caller;
+	struct vm_struct	*next; // 指向下一个vm_struct实例
+	void			*addr;//起始虚拟地址
+	unsigned long		size;//长度
+	unsigned long		flags;//标志位
+	struct page		**pages; //指向page指针数组
+	unsigned int		nr_pages;//页数
+	phys_addr_t		phys_addr;//起始物理地址
+	const void		*caller;//回收调用的回调函数
 };
 
+//虚拟内存区域的范围
 struct vmap_area {
-	unsigned long va_start;
-	unsigned long va_end;
-	unsigned long flags;
+	unsigned long va_start; // 起始虚拟地址
+	unsigned long va_end; // 结束虚拟地址
+	unsigned long flags; //标志位,如果此标志位设为VM_VM_AREA,表示成员vm指向一个struct vm_struct实例
+	
+	//红黑树节点，用来把vmap_area实例加入到根节点是vmap_area_root的红黑树当中
 	struct rb_node rb_node;         /* address sorted rbtree */
-	struct list_head list;          /* address sorted list */
-	struct llist_node purge_list;    /* "lazy purge" list */
-	struct vm_struct *vm;
+	struct list_head list;  // 链表节点
+	struct llist_node purge_list; //延后回写的脏页链表
+	struct vm_struct *vm;//指向一系列的struct vm_struct实例
 	struct rcu_head rcu_head;
 };
 
