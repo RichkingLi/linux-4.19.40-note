@@ -108,22 +108,40 @@
  *		only require the D-TLB to be invalidated.
  *		- kaddr - Kernel virtual memory address
  */
+//使当前cpu的所有的tlb表失效
 static inline void local_flush_tlb_all(void)
 {
-	dsb(nshst);
-	__tlbi(vmalle1);
-	dsb(nsh);
-	isb();
+	//nshst和ishst区别：nsh是非共享，ish是多核共享
+	dsb(nshst);//数据同步屏障，确保屏障前的当前cpu的存储指令执行完毕
+	
+	/*vmalle1：
+	vm：需要匹配VMID
+	all：所有ASID
+	e1：异常级别（有三个异常级别e1 e2 e3）
+	is：表示多核共享
+	*/
+	__tlbi(vmalle1);//使当前核上匹配VMID的，异常级别1的所有TLB失效
+	dsb(nsh);//确保之前的tlb失效指令执行完毕
+	isb();//指令同步屏障，冲刷处理器流水线，重新读取屏障后的所有指令
 }
 
+//使所有的tlb表失效
 static inline void flush_tlb_all(void)
 {
-	dsb(ishst);
-	__tlbi(vmalle1is);
-	dsb(ish);
-	isb();
+	//nshst和ishst区别：nsh是非共享，ish是多核共享
+	dsb(ishst);//数据同步屏障，确保屏障前的所有cpu的存储指令执行完毕
+	/*vmalle1：
+	vm：需要匹配VMID
+	all：所有ASID
+	e1：异常级别（有三个异常级别e1 e2 e3）
+	is：缺少is表示单核非共享
+	*/
+	__tlbi(vmalle1is);//使所有核上匹配VMID的，异常级别1的所有TLB失效
+	dsb(ish);//确保之前的tlb失效指令执行完毕
+	isb();//指令同步屏障，冲刷处理器流水线，重新读取屏障后的所有指令
 }
 
+//使指定用户地址空间的所有的tlb表失效，参数mm是进程的内存描述符
 static inline void flush_tlb_mm(struct mm_struct *mm)
 {
 	unsigned long asid = __TLBI_VADDR(0, ASID(mm));
@@ -134,6 +152,7 @@ static inline void flush_tlb_mm(struct mm_struct *mm)
 	dsb(ish);
 }
 
+//使指定用户地址空间的指定页面的tlb表失效
 static inline void flush_tlb_page(struct vm_area_struct *vma,
 				  unsigned long uaddr)
 {
