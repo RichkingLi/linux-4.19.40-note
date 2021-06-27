@@ -26,8 +26,8 @@
 #ifndef __ASSEMBLY__
 
 typedef struct {
-	atomic64_t	id;
-	void		*vdso;
+	atomic64_t	id;//存放内核给进程分配的软件ASID
+	void		*vdso;//虚拟动态链接共享对象,实现vsyscall将内核态的调用映射到用户态的地址空间中
 	unsigned long	flags;
 } mm_context_t;
 
