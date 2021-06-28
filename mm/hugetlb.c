@@ -38,9 +38,10 @@
 #include <linux/page_owner.h>
 #include "internal.h"
 
-int hugetlb_max_hstate __read_mostly;
-unsigned int default_hstate_idx;
-struct hstate hstates[HUGE_MAX_HSTATE];
+int hugetlb_max_hstate __read_mostly;//巨型页池中的巨型页数量
+unsigned int default_hstate_idx;//默认的巨型页池的索引
+struct hstate hstates[HUGE_MAX_HSTATE];//数组元素表示一种大小的page，系统支持HUGE_MAX_HSTATE种巨型页
+
 /*
  * Minimum page order among possible hugepage sizes, set to a proper value
  * at boot time.
@@ -2004,6 +2005,8 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 	 * has a reservation for the page to be allocated.  A return
 	 * code of zero indicates a reservation exists (no change).
 	 */
+	//系统初始化时为每个NUMA node都初始化了相应的空闲大页面链表hugepage_freelists，并分配了全部的大页面
+	//检查区域/预留映射，以确定流程是否预留了要分配的页面
 	map_chg = gbl_chg = vma_needs_reservation(h, vma, addr);
 	if (map_chg < 0)
 		return ERR_PTR(-ENOMEM);
@@ -2015,8 +2018,8 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 	 * Allocations for MAP_NORESERVE mappings also need to be
 	 * checked against any subpool limit.
 	 */
-	if (map_chg || avoid_reserve) {
-		gbl_chg = hugepage_subpool_get_pages(spool, 1);
+	if (map_chg || avoid_reserve) {//如果没有预留
+		gbl_chg = hugepage_subpool_get_pages(spool, 1);//则检查分配是否超过子池限制
 		if (gbl_chg < 0) {
 			vma_end_reservation(h, vma, addr);
 			return ERR_PTR(-ENOSPC);
@@ -2044,10 +2047,11 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 	 * from the global free pool (global change).  gbl_chg == 0 indicates
 	 * a reservation exists for the allocation.
 	 */
+	//在hugepage_freelists中查找需要的vma
 	page = dequeue_huge_page_vma(h, vma, addr, avoid_reserve, gbl_chg);
 	if (!page) {
 		spin_unlock(&hugetlb_lock);
-		page = alloc_buddy_huge_page_with_mpol(h, vma, addr);
+		page = alloc_buddy_huge_page_with_mpol(h, vma, addr);//找不到，需要再分配
 		if (!page)
 			goto out_uncharge_cgroup;
 		if (!avoid_reserve && vma_has_reserves(vma, gbl_chg)) {
@@ -2061,9 +2065,9 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 	hugetlb_cgroup_commit_charge(idx, pages_per_huge_page(h), h_cg, page);
 	spin_unlock(&hugetlb_lock);
 
-	set_page_private(page, (unsigned long)spool);
+	set_page_private(page, (unsigned long)spool);//设置页面属性
 
-	map_commit = vma_commit_reservation(h, vma, addr);
+	map_commit = vma_commit_reservation(h, vma, addr);//根据预留的消耗调整预留映射
 	if (unlikely(map_chg > map_commit)) {
 		/*
 		 * The page was added to the reservation map between
@@ -2762,28 +2766,31 @@ static int __init hugetlb_init(void)
 	if (!hugepages_supported())
 		return 0;
 
+	//设置巨型页大小，如果command line设置了则跳过，否则使用内核设置的HPAGE_SIZE
 	if (!size_to_hstate(default_hstate_size)) {
 		if (default_hstate_size != 0) {
 			pr_err("HugeTLB: unsupported default_hugepagesz %lu. Reverting to %lu\n",
 			       default_hstate_size, HPAGE_SIZE);
 		}
 
-		default_hstate_size = HPAGE_SIZE;
+		default_hstate_size = HPAGE_SIZE;//设置为默认的2M巨型页
 		if (!size_to_hstate(default_hstate_size))
-			hugetlb_add_hstate(HUGETLB_PAGE_ORDER);
+			hugetlb_add_hstate(HUGETLB_PAGE_ORDER);//将HUGE_MAX_HSTATE中巨型页池添加到hstate数组中并且初始化好
 	}
-	default_hstate_idx = hstate_index(size_to_hstate(default_hstate_size));
-	if (default_hstate_max_huge_pages) {
+	default_hstate_idx = hstate_index(size_to_hstate(default_hstate_size));//设置巨型页在hstates中对应索引号
+	if (default_hstate_max_huge_pages) {//最大默认页数为0，否则对每种巨型页设置一下
 		if (!default_hstate.max_huge_pages)
 			default_hstate.max_huge_pages = default_hstate_max_huge_pages;
 	}
 
-	hugetlb_init_hstates();
+	hugetlb_init_hstates();//根据当前hstate->order，初始化巨型页池hstates结构体
 	gather_bootmem_prealloc();
-	report_hugepages();
+	report_hugepages();//输出当前系统支持的不同巨型页大小以及分配页数。
 
-	hugetlb_sysfs_init();
-	hugetlb_register_all_nodes();
+	hugetlb_sysfs_init();//在/sys/kernel/mm/hugepages目录下针对不同大小的巨型页创建目录
+	hugetlb_register_all_nodes();//处理NUMA架构下不同node的巨型页
+	
+	//创建/sys/fs/cgroup/hugetlb下节点：hugetlb.2MB.failcnt、hugetlb.2MB.limit_in_bytes、hugetlb.2MB.max_usage_in_bytes、hugetlb.2MB.usage_in_bytes
 	hugetlb_cgroup_file_init();
 
 #ifdef CONFIG_SMP
@@ -2797,7 +2804,7 @@ static int __init hugetlb_init(void)
 	BUG_ON(!hugetlb_fault_mutex_table);
 
 	for (i = 0; i < num_fault_mutexes; i++)
-		mutex_init(&hugetlb_fault_mutex_table[i]);
+		mutex_init(&hugetlb_fault_mutex_table[i]);//初始化巨型页TLB锁
 	return 0;
 }
 subsys_initcall(hugetlb_init);
@@ -2813,22 +2820,24 @@ void __init hugetlb_add_hstate(unsigned int order)
 	struct hstate *h;
 	unsigned long i;
 
-	if (size_to_hstate(PAGE_SIZE << order)) {
+	if (size_to_hstate(PAGE_SIZE << order)) {//避免相同大小巨型页两次加入
 		pr_warn("hugepagesz= specified twice, ignoring\n");
 		return;
 	}
 	BUG_ON(hugetlb_max_hstate >= HUGE_MAX_HSTATE);
 	BUG_ON(order == 0);
-	h = &hstates[hugetlb_max_hstate++];
-	h->order = order;
+	
+	//下面是设置hstates中对应巨型页池属性。
+	h = &hstates[hugetlb_max_hstate++];//获取最新巨型页池地址
+	h->order = order;//设置巨型页池中巨型页大小
 	h->mask = ~((1ULL << (order + PAGE_SHIFT)) - 1);
 	h->nr_huge_pages = 0;
 	h->free_huge_pages = 0;
 	for (i = 0; i < MAX_NUMNODES; ++i)
-		INIT_LIST_HEAD(&h->hugepage_freelists[i]);
-	INIT_LIST_HEAD(&h->hugepage_activelist);
-	h->next_nid_to_alloc = first_memory_node;
-	h->next_nid_to_free = first_memory_node;
+		INIT_LIST_HEAD(&h->hugepage_freelists[i]);//NUMA下初始化各个节点的巨型页队列头
+	INIT_LIST_HEAD(&h->hugepage_activelist);//初始化巨型页已经使用的巨型页队列
+	h->next_nid_to_alloc = first_memory_node;//下一个可以申请的巨型页初始化为第一个内存节点
+	h->next_nid_to_free = first_memory_node;//下一个可以释放的巨型页初始化为第一个内存节点
 	snprintf(h->name, HSTATE_NAME_LEN, "hugepages-%lukB",
 					huge_page_size(h)/1024);
 
@@ -3748,7 +3757,7 @@ static vm_fault_t hugetlb_no_page(struct mm_struct *mm,
 	 * before we get page_table_lock.
 	 */
 retry:
-	page = find_lock_page(mapping, idx);
+	page = find_lock_page(mapping, idx);//使用页锁来防止被截断
 	if (!page) {
 		size = i_size_read(mapping->host) >> huge_page_shift(h);
 		if (idx >= size)
@@ -3757,6 +3766,7 @@ retry:
 		/*
 		 * Check for page in userfault range
 		 */
+		//如果用户丢失vma信息，说明之前已经分配了物理页
 		if (userfaultfd_missing(vma)) {
 			u32 hash;
 			struct vm_fault vmf = {
@@ -3780,12 +3790,14 @@ retry:
 			hash = hugetlb_fault_mutex_hash(h, mm, vma, mapping,
 							idx, haddr);
 			mutex_unlock(&hugetlb_fault_mutex_table[hash]);
+			
+			//这里主要处理一下用户异常后返回
 			ret = handle_userfault(&vmf, VM_UFFD_MISSING);
 			mutex_lock(&hugetlb_fault_mutex_table[hash]);
 			goto out;
 		}
-
-		page = alloc_huge_page(vma, haddr, 0);
+		
+		page = alloc_huge_page(vma, haddr, 0);//分配巨型页页面
 		if (IS_ERR(page)) {
 			ret = vmf_error(PTR_ERR(page));
 			goto out;
@@ -3795,6 +3807,7 @@ retry:
 		new_page = true;
 
 		if (vma->vm_flags & VM_MAYSHARE) {
+			//如果是共享页，将该页面加入到该hugetlb文件对应的Page Cache中，以便可以与其它进程共享该大页面
 			int err = huge_add_to_page_cache(page, mapping, idx);
 			if (err) {
 				put_page(page);
@@ -3804,7 +3817,7 @@ retry:
 			}
 		} else {
 			lock_page(page);
-			if (unlikely(anon_vma_prepare(vma))) {
+			if (unlikely(anon_vma_prepare(vma))) {//确保anon_vma已经分配成功
 				ret = VM_FAULT_OOM;
 				goto backout_unlocked;
 			}
@@ -3829,6 +3842,7 @@ retry:
 	 * any allocations necessary to record that reservation occur outside
 	 * the spinlock.
 	 */
+	//如果引发缺页中断的内存操作是写操作，且该大页面被设置为只读，则预先做一次写时复制操作，避免产生缺页中断而影响性能
 	if ((flags & FAULT_FLAG_WRITE) && !(vma->vm_flags & VM_SHARED)) {
 		if (vma_needs_reservation(h, vma, haddr) < 0) {
 			ret = VM_FAULT_OOM;
@@ -3838,7 +3852,7 @@ retry:
 		vma_end_reservation(h, vma, haddr);
 	}
 
-	ptl = huge_pte_lock(h, mm, ptep);
+	ptl = huge_pte_lock(h, mm, ptep);//巨型页页表上锁
 	size = i_size_read(mapping->host) >> huge_page_shift(h);
 	if (idx >= size)
 		goto backout;
@@ -3856,7 +3870,8 @@ retry:
 				&& (vma->vm_flags & VM_SHARED)));
 	set_huge_pte_at(mm, haddr, ptep, new_pte);
 
-	hugetlb_count_add(pages_per_huge_page(h), mm);
+	hugetlb_count_add(pages_per_huge_page(h), mm);//分配成功，hugetlb计数修改
+	//如果引发缺页中断的内存操作是写操作，而且是共享的，则在这里调用hugetlb_cow分配物理页
 	if ((flags & FAULT_FLAG_WRITE) && !(vma->vm_flags & VM_SHARED)) {
 		/* Optimization, do the COW without a second fault */
 		ret = hugetlb_cow(mm, vma, address, ptep, page, ptl);
@@ -3869,6 +3884,7 @@ retry:
 	 * in the pagecache could be !page_huge_active() if they have been
 	 * isolated for migration.
 	 */
+	//如果激活新分配的页面，设置它们状态是否可以被隔离以进行迁移。 
 	if (new_page)
 		set_page_huge_active(page);
 
@@ -3935,17 +3951,17 @@ vm_fault_t hugetlb_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	int need_wait_lock = 0;
 	unsigned long haddr = address & huge_page_mask(h);
 
-	ptep = huge_pte_offset(mm, haddr, huge_page_size(h));
+	ptep = huge_pte_offset(mm, haddr, huge_page_size(h));//根据addr查找对应的pte表项的地址（pgd->pud->pmd->pte）
 	if (ptep) {
-		entry = huge_ptep_get(ptep);
-		if (unlikely(is_hugetlb_entry_migration(entry))) {
+		entry = huge_ptep_get(ptep);//查找到就说明并没有缺页，要找到对应的entry
+		if (unlikely(is_hugetlb_entry_migration(entry))) {//如果巨型页迁移了
 			migration_entry_wait_huge(vma, mm, ptep);
 			return 0;
-		} else if (unlikely(is_hugetlb_entry_hwpoisoned(entry)))
+		} else if (unlikely(is_hugetlb_entry_hwpoisoned(entry)))//如果是巨型透明页
 			return VM_FAULT_HWPOISON_LARGE |
 				VM_FAULT_SET_HINDEX(hstate_index(h));
 	} else {
-		ptep = huge_pte_alloc(mm, haddr, huge_page_size(h));
+		ptep = huge_pte_alloc(mm, haddr, huge_page_size(h));//查找失败则分配pte页表项
 		if (!ptep)
 			return VM_FAULT_OOM;
 	}
@@ -3959,10 +3975,11 @@ vm_fault_t hugetlb_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	 * the same page in the page cache.
 	 */
 	hash = hugetlb_fault_mutex_hash(h, mm, vma, mapping, idx, haddr);
-	mutex_lock(&hugetlb_fault_mutex_table[hash]);
+	mutex_lock(&hugetlb_fault_mutex_table[hash]);//巨型页tlb上锁
 
-	entry = huge_ptep_get(ptep);
+	entry = huge_ptep_get(ptep);//要找到对应的entry
 	if (huge_pte_none(entry)) {
+		//巨型页缺页处理函数，用于分配物理内存、建立虚实映射
 		ret = hugetlb_no_page(mm, vma, mapping, idx, address, ptep, flags);
 		goto out_mutex;
 	}
@@ -3976,6 +3993,7 @@ vm_fault_t hugetlb_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	 * and is_hugetlb_entry_(migration|hwpoisoned) check will properly
 	 * handle it.
 	 */
+	//判断当前entry是不是活动的，如果是，说明缓存中有一个活动的大页面
 	if (!pte_present(entry))
 		goto out_mutex;
 
@@ -3987,6 +4005,7 @@ vm_fault_t hugetlb_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	 * page now as it is used to determine if a reservation has been
 	 * consumed.
 	 */
+	//如果引发缺页中断的内存操作是写操作，且该大页面被设置为只读，则预先做一次写时复制操作，避免产生缺页中断而影响性能
 	if ((flags & FAULT_FLAG_WRITE) && !huge_pte_write(entry)) {
 		if (vma_needs_reservation(h, vma, haddr) < 0) {
 			ret = VM_FAULT_OOM;
@@ -4000,7 +4019,7 @@ vm_fault_t hugetlb_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 								vma, haddr);
 	}
 
-	ptl = huge_pte_lock(h, mm, ptep);
+	ptl = huge_pte_lock(h, mm, ptep);//巨型页tlb上锁
 
 	/* Check for a racing update before calling hugetlb_cow */
 	if (unlikely(!pte_same(entry, huge_ptep_get(ptep))))
@@ -4011,37 +4030,41 @@ vm_fault_t hugetlb_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	 * pagecache_page, so here we need take the former one
 	 * when page != pagecache_page or !pagecache_page.
 	 */
-	page = pte_page(entry);
+	page = pte_page(entry);//根据entry查找到巨型页
 	if (page != pagecache_page)
 		if (!trylock_page(page)) {
 			need_wait_lock = 1;
 			goto out_ptl;
 		}
 
-	get_page(page);
+	get_page(page);//进行细粒度页面上锁
 
+	//如果引发缺页中断的内存操作是写操作
 	if (flags & FAULT_FLAG_WRITE) {
 		if (!huge_pte_write(entry)) {
+			//巨型页写时复制操作函数
 			ret = hugetlb_cow(mm, vma, address, ptep,
 					  pagecache_page, ptl);
 			goto out_put_page;
 		}
 		entry = huge_pte_mkdirty(entry);
 	}
-	entry = pte_mkyoung(entry);
+	entry = pte_mkyoung(entry);//设置页表项的访问标志位，表示页数据刚刚被访问了（热页），避免被换出
+	
+	//设置巨型页属性，调用update_mmu_cache更新内存管理单元的页表高速缓存cache
 	if (huge_ptep_set_access_flags(vma, haddr, ptep, entry,
 						flags & FAULT_FLAG_WRITE))
 		update_mmu_cache(vma, haddr, ptep);
 out_put_page:
 	if (page != pagecache_page)
 		unlock_page(page);
-	put_page(page);
+	put_page(page);//进行细粒度页面解锁
 out_ptl:
 	spin_unlock(ptl);
 
 	if (pagecache_page) {
 		unlock_page(pagecache_page);
-		put_page(pagecache_page);
+		put_page(pagecache_page);//进行细粒度页面解锁
 	}
 out_mutex:
 	mutex_unlock(&hugetlb_fault_mutex_table[hash]);

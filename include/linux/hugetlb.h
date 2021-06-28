@@ -337,26 +337,26 @@ unsigned long hugetlb_get_unmapped_area(struct file *file, unsigned long addr,
 #define HSTATE_NAME_LEN 32
 /* Defines one hugetlb page size */
 struct hstate {
-	int next_nid_to_alloc;
-	int next_nid_to_free;
-	unsigned int order;
+	int next_nid_to_alloc;//记录下一个内存节点，加速巨型页申请
+	int next_nid_to_free;//记录下一个内存节点，方便巨型页释放
+	unsigned int order;//表示巨型页大小
 	unsigned long mask;
-	unsigned long max_huge_pages;
-	unsigned long nr_huge_pages;
-	unsigned long free_huge_pages;
-	unsigned long resv_huge_pages;
-	unsigned long surplus_huge_pages;
-	unsigned long nr_overcommit_huge_pages;
-	struct list_head hugepage_activelist;
-	struct list_head hugepage_freelists[MAX_NUMNODES];
-	unsigned int nr_huge_pages_node[MAX_NUMNODES];
-	unsigned int free_huge_pages_node[MAX_NUMNODES];
-	unsigned int surplus_huge_pages_node[MAX_NUMNODES];
+	unsigned long max_huge_pages;//最大支持巨型页数量
+	unsigned long nr_huge_pages;//系统支持巨型页数量
+	unsigned long free_huge_pages;//系统空闲巨型页数量
+	unsigned long resv_huge_pages;//系统保留巨型页数量
+	unsigned long surplus_huge_pages;//系统剩余巨型页数量
+	unsigned long nr_overcommit_huge_pages;//系统支持临时巨型页数量
+	struct list_head hugepage_activelist;//指向已经分配的巨型页队列
+	struct list_head hugepage_freelists[MAX_NUMNODES];//指向空闲的巨型页队列
+	unsigned int nr_huge_pages_node[MAX_NUMNODES];//NUMA下各节点的巨型页数量
+	unsigned int free_huge_pages_node[MAX_NUMNODES];//NUMA下各节点的空闲巨型页数量
+	unsigned int surplus_huge_pages_node[MAX_NUMNODES];//NUMA下各节点的剩余巨型页数量
 #ifdef CONFIG_CGROUP_HUGETLB
 	/* cgroup control files */
 	struct cftype cgroup_files[5];
 #endif
-	char name[HSTATE_NAME_LEN];
+	char name[HSTATE_NAME_LEN];//巨型页名称，一般表示为巨型页大小（/sys/kernel/mm/hugepages/）
 };
 
 struct huge_bootmem_page {

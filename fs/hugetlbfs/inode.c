@@ -1058,6 +1058,7 @@ static void init_once(void *foo)
 	inode_init_once(&ei->vfs_inode);
 }
 
+//hugetlbfs操作函数集，可以看出hugetlbfs文件系统中文件只支持read/mmap/ummap等操作，不支持write
 const struct file_operations hugetlbfs_file_operations = {
 	.read_iter		= hugetlbfs_read_iter,
 	.mmap			= hugetlbfs_file_mmap,
@@ -1396,13 +1397,15 @@ static int __init init_hugetlbfs_fs(void)
 	}
 
 	error = -ENOMEM;
+	
+	//初始化hugetlbfs文件系统inode slab缓存，后续hugetlbfs的inode从这里面分配
 	hugetlbfs_inode_cachep = kmem_cache_create("hugetlbfs_inode_cache",
 					sizeof(struct hugetlbfs_inode_info),
 					0, SLAB_ACCOUNT, init_once);
 	if (hugetlbfs_inode_cachep == NULL)
 		goto out2;
 
-	error = register_filesystem(&hugetlbfs_fs_type);
+	error = register_filesystem(&hugetlbfs_fs_type);//注册hugetlbfs文件系统，将hugetlbfs_fs_type加入到全局file_systems链表中
 	if (error)
 		goto out;
 
@@ -1412,6 +1415,8 @@ static int __init init_hugetlbfs_fs(void)
 		unsigned ps_kb = 1U << (h->order + PAGE_SHIFT - 10);
 
 		snprintf(buf, sizeof(buf), "pagesize=%uK", ps_kb);
+		
+		//创建hugetlbfs的super_block、entry、inode，并建立它们之间的相互映射
 		hugetlbfs_vfsmount[i] = kern_mount_data(&hugetlbfs_fs_type,
 							buf);
 
