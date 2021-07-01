@@ -234,14 +234,14 @@ struct zone_reclaim_stat {
 };
 
 struct lruvec {
-	struct list_head		lists[NR_LRU_LISTS];
-	struct zone_reclaim_stat	reclaim_stat;
+	struct list_head		lists[NR_LRU_LISTS];//5个lru双向链表头
+	struct zone_reclaim_stat	reclaim_stat; //与回收相关的统计数据
 	/* Evictions & activations on the inactive file list */
 	atomic_long_t			inactive_age;
 	/* Refaults at the time of last reclaim cycle */
-	unsigned long			refaults;
+	unsigned long			refaults;//记录最后一次回收周期发生的结果
 #ifdef CONFIG_MEMCG
-	struct pglist_data *pgdat;
+	struct pglist_data *pgdat;//所属内存节点结构体 struct pglist_data
 #endif
 };
 
@@ -685,7 +685,7 @@ typedef struct pglist_data {
 
 	/* Write-intensive fields used by page reclaim */
 	ZONE_PADDING(_pad1_)
-	spinlock_t		lru_lock;
+	spinlock_t		lru_lock;//lru链表锁
 
 #ifdef CONFIG_DEFERRED_STRUCT_PAGE_INIT
 	/*
@@ -704,7 +704,7 @@ typedef struct pglist_data {
 #endif
 
 	/* Fields commonly accessed by the page reclaim scanner */
-	struct lruvec		lruvec;
+	struct lruvec		lruvec;//lru链表描述符，里面有5个lru链表
 
 	unsigned long		flags;
 

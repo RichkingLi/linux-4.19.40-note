@@ -68,13 +68,13 @@
  * SPARSEMEM_EXTREME with !SPARSEMEM_VMEMMAP).
  */
 enum pageflags {
-	PG_locked,		/* Page is locked. Don't touch. */
+	PG_locked,//页面是否锁住
 	PG_error,
-	PG_referenced,
+	PG_referenced,//页面最近是否被访问
 	PG_uptodate,
-	PG_dirty,
-	PG_lru,
-	PG_active,
+	PG_dirty, //页面是否脏页
+	PG_lru,//页面是否处于LRU链表中
+	PG_active,//页面是否为活动页
 	PG_waiters,		/* Page has waiters, check its waitqueue. Must be bit #7 and in the same byte as "PG_locked" */
 	PG_slab,
 	PG_owner_priv_1,	/* Owner use. If pagecache, fs may use*/
@@ -86,10 +86,10 @@ enum pageflags {
 	PG_head,		/* A head page */
 	PG_mappedtodisk,	/* Has blocks allocated on-disk */
 	PG_reclaim,		/* To be reclaimed asap */
-	PG_swapbacked,		/* Page is backed by RAM/swap */
-	PG_unevictable,		/* Page is "unevictable"  */
+	PG_swapbacked,//页面是否依靠swap
+	PG_unevictable,	//页面是否不可回收
 #ifdef CONFIG_MMU
-	PG_mlocked,		/* Page is vma mlocked */
+	PG_mlocked,//此页被mlock()锁在内存中，禁止换出和释放
 #endif
 #ifdef CONFIG_ARCH_USES_PG_UNCACHED
 	PG_uncached,		/* Page has been mapped as uncached */

@@ -63,13 +63,13 @@
 
 struct scan_control {
 	/* How many pages shrink_list() should reclaim */
-	unsigned long nr_to_reclaim;
+	unsigned long nr_to_reclaim;//需要回收的页面数量
 
 	/*
 	 * Nodemask of nodes allowed by the caller. If NULL, all nodes
 	 * are scanned.
 	 */
-	nodemask_t	*nodemask;
+	nodemask_t	*nodemask;//内存节点掩码，空指针则访问所有的节点
 
 	/*
 	 * The memory cgroup that hit its limit and as a result is the
@@ -78,13 +78,13 @@ struct scan_control {
 	struct mem_cgroup *target_mem_cgroup;
 
 	/* Writepage batching in laptop mode; RECLAIM_WRITE */
-	unsigned int may_writepage:1;
+	unsigned int may_writepage:1;//是否允许把修改过文件页写回存储设备
 
 	/* Can mapped pages be reclaimed? */
-	unsigned int may_unmap:1;
+	unsigned int may_unmap:1;//是否取消页面的映射并进行回收处理
 
 	/* Can pages be swapped as part of reclaim? */
-	unsigned int may_swap:1;
+	unsigned int may_swap:1;//是否将匿名页交换到swap分区，并进行回收处理
 
 	/*
 	 * Cgroups are not reclaimed below their configured memory.low,
@@ -100,22 +100,22 @@ struct scan_control {
 	unsigned int compaction_ready:1;
 
 	/* Allocation order */
-	s8 order;
+	s8 order;//申请分配的阶数值，最终期望内存回收后能满足申请要求
 
 	/* Scan (total_size >> priority) pages at once */
-	s8 priority;
+	s8 priority;//扫描LRU链表的优先级，用于计算每次扫描页面的数量，值越小，扫描的页面数越大，逐级增加扫描粒度；
 
 	/* The highest zone to isolate pages for reclaim from */
 	s8 reclaim_idx;
 
 	/* This context's GFP mask */
-	gfp_t gfp_mask;
+	gfp_t gfp_mask;//申请分配的掩码，用户申请页面时可以通过设置标志来限制调用底层文件系统或不允许读写存储设备，最终传递给LRU处理
 
 	/* Incremented by the number of inactive pages that were scanned */
-	unsigned long nr_scanned;
+	unsigned long nr_scanned;//统计扫描过的非活动页面总数
 
 	/* Number of pages freed so far during a call to shrink_zones() */
-	unsigned long nr_reclaimed;
+	unsigned long nr_reclaimed;//统计回收了的页面总数
 
 	struct {
 		unsigned int dirty;

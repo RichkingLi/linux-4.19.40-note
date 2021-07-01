@@ -66,8 +66,15 @@ struct hmm;
 #else
 #define _struct_page_alignment
 #endif
-
+//用于页描述符，一组标志(如PG_locked、PG_error)，同时页框所在的管理区和node的编号也保存在当中
 struct page {
+    /* 在lru算法中主要用到的标志flags
+     * PG_active: 表示此页当前是否活跃，当放到或者准备放到活动lru链表时，被置位
+     * PG_referenced: 表示此页最近是否被访问，每次页面访问都会被置位
+     * PG_lru: 表示此页是处于lru链表中的
+     * PG_mlocked: 表示此页被mlock()锁在内存中，禁止换出和释放
+     * PG_swapbacked: 表示此页依靠swap，可能是进程的匿名页(堆、栈、数据段)，匿名mmap共享内存映射，shmem共享内存映射
+     */
 	unsigned long flags;		/* Atomic flags, some possibly
 					 * updated asynchronously */
 	/*

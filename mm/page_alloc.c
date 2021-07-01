@@ -3583,10 +3583,11 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	struct page *page;
 	unsigned int noreclaim_flag;
 
-	if (!order)
+	if (!order)//order为0情况，不用进行内存规整
 		return NULL;
 
 	noreclaim_flag = memalloc_noreclaim_save();
+	//直接内存规整来满足高阶分配需求
 	*compact_result = try_to_compact_pages(gfp_mask, order, alloc_flags, ac,
 									prio);
 	memalloc_noreclaim_restore(noreclaim_flag);
@@ -3600,6 +3601,7 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	 */
 	count_vm_event(COMPACTSTALL);
 
+	//在规整完成后进行页面分配操作
 	page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac);
 
 	if (page) {
@@ -4229,7 +4231,7 @@ retry:
 		goto got_pg;
 
 	/* Try direct compaction and then allocating */
-	//进行页面压缩，然后进行页面分配
+	//进行页面规整，然后进行页面分配
 	page = __alloc_pages_direct_compact(gfp_mask, order, alloc_flags, ac,
 					compact_priority, &compact_result);
 	if (page)
@@ -4259,7 +4261,7 @@ retry:
 	 * implementation of the compaction depends on the sufficient amount
 	 * of free memory (see __compaction_suitable)
 	 */
-	//如果申请阶数大于0，判断是否需要重新尝试压缩
+	//如果申请阶数大于0，判断是否需要重新尝试规整
 	if (did_some_progress > 0 &&
 			should_compact_retry(ac, order, alloc_flags,
 				compact_result, &compact_priority,
