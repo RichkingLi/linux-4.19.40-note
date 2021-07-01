@@ -756,13 +756,14 @@ int migrate_page(struct address_space *mapping,
 
 	BUG_ON(PageWriteback(page));	/* Writeback must be complete */
 
+	//对于匿名页面来说，什么也不做直接返回
 	rc = migrate_page_move_mapping(mapping, newpage, page, NULL, mode, 0);
 
 	if (rc != MIGRATEPAGE_SUCCESS)
 		return rc;
 
 	if (mode != MIGRATE_SYNC_NO_COPY)
-		migrate_page_copy(newpage, page);
+		migrate_page_copy(newpage, page);//把页面page复制到新页面newpage中
 	else
 		migrate_page_states(newpage, page);
 	return MIGRATEPAGE_SUCCESS;
@@ -879,7 +880,7 @@ static int writeout(struct address_space *mapping, struct page *page)
 static int fallback_migrate_page(struct address_space *mapping,
 	struct page *newpage, struct page *page, enum migrate_mode mode)
 {
-	if (PageDirty(page)) {
+	if (PageDirty(page)) {//如果是脏页
 		/* Only writeback pages in full synchronous migration */
 		switch (mode) {
 		case MIGRATE_SYNC:
@@ -888,13 +889,14 @@ static int fallback_migrate_page(struct address_space *mapping,
 		default:
 			return -EBUSY;
 		}
-		return writeout(mapping, page);
+		return writeout(mapping, page);//回写
 	}
 
 	/*
 	 * Buffers may be managed in a filesystem specific way.
 	 * We must have no buffers or drop them.
 	 */
+	//如果是私有文件并且没有办法释放返回错误
 	if (page_has_private(page) &&
 	    !try_to_release_page(page, GFP_KERNEL))
 		return -EAGAIN;
@@ -923,10 +925,12 @@ static int move_to_new_page(struct page *newpage, struct page *page,
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
 	VM_BUG_ON_PAGE(!PageLocked(newpage), newpage);
 
+	//检查当前页面你是否被映射。如果page属于slab或是匿名页面，返回为空。SWAP则返回swap_address_space空间；其余page cache直接返回page->mapping
 	mapping = page_mapping(page);
 
 	if (likely(is_lru)) {
 		if (!mapping)
+			//slab或者匿名页面调用migrate_page()将旧页面相关信息迁移到新页面
 			rc = migrate_page(mapping, newpage, page, mode);
 		else if (mapping->a_ops->migratepage)
 			/*
@@ -936,9 +940,11 @@ static int move_to_new_page(struct page *newpage, struct page *page,
 			 * migratepage callback. This is the most common path
 			 * for page migration.
 			 */
+			//有mapping的情况，调用migratepage函数进行迁移
 			rc = mapping->a_ops->migratepage(mapping, newpage,
 							page, mode);
 		else
+			//没有映射则回退页面迁移操作
 			rc = fallback_migrate_page(mapping, newpage,
 							page, mode);
 	} else {
@@ -1001,8 +1007,8 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 	struct anon_vma *anon_vma = NULL;
 	bool is_lru = !__PageMovable(page);
 
-	if (!trylock_page(page)) {
-		if (!force || mode == MIGRATE_ASYNC)
+	if (!trylock_page(page)) {//尝试给页面枷锁
+		if (!force || mode == MIGRATE_ASYNC)//加锁失败，且强制迁移或异步模式，则忽略这个页面
 			goto out;
 
 		/*
@@ -1024,6 +1030,7 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 		lock_page(page);
 	}
 
+	//页面回写
 	if (PageWriteback(page)) {
 		/*
 		 * Only in the case of a full synchronous migration is it
@@ -1073,7 +1080,7 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 		goto out_unlock;
 
 	if (unlikely(!is_lru)) {
-		rc = move_to_new_page(newpage, page, mode);
+		rc = move_to_new_page(newpage, page, mode);//将page内容迁移到newpage
 		goto out_unlock_both;
 	}
 
@@ -1095,7 +1102,7 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 			try_to_free_buffers(page);
 			goto out_unlock_both;
 		}
-	} else if (page_mapped(page)) {
+	} else if (page_mapped(page)) {//有pte映射的页面，调用try_to_unmap()解除页面所有映射
 		/* Establish migration ptes */
 		VM_BUG_ON_PAGE(PageAnon(page) && !PageKsm(page) && !anon_vma,
 				page);
@@ -1104,10 +1111,10 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 		page_was_mapped = 1;
 	}
 
-	if (!page_mapped(page))
+	if (!page_mapped(page))//已经解除完所有映射的页面，将页面迁移到新分配的页面newpage
 		rc = move_to_new_page(newpage, page, mode);
 
-	if (page_was_mapped)
+	if (page_was_mapped)//迁移页面失败，调用remove_migration_ptes()删掉迁移的pte
 		remove_migration_ptes(page,
 			rc == MIGRATEPAGE_SUCCESS ? newpage : page, false);
 
@@ -1165,6 +1172,7 @@ static ICE_noinline int unmap_and_move(new_page_t get_new_page,
 	if (!thp_migration_supported() && PageTransHuge(page))
 		return -ENOMEM;
 
+	//调用get_new_page参数,也就是上面的compaction_alloc函数
 	newpage = get_new_page(page, private);
 	if (!newpage)
 		return -ENOMEM;
@@ -1186,6 +1194,7 @@ static ICE_noinline int unmap_and_move(new_page_t get_new_page,
 		goto out;
 	}
 
+	//真正尝试迁移页面page到新分配的页面newpage的函数
 	rc = __unmap_and_move(page, newpage, force, mode);
 	if (rc == MIGRATEPAGE_SUCCESS)
 		set_page_owner_migrate_reason(newpage, reason);
@@ -1291,6 +1300,7 @@ static int unmap_and_move_huge_page(new_page_t get_new_page,
 		return -ENOSYS;
 	}
 
+	//调用get_new_page参数,也就是上面的compaction_alloc函数
 	new_hpage = get_new_page(hpage, private);
 	if (!new_hpage)
 		return -ENOMEM;
@@ -1404,6 +1414,7 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 	if (!swapwrite)
 		current->flags |= PF_SWAPWRITE;
 
+	//尝试10次，从from摘取一个页面，调用unmap_and_move()函数进行页迁移，返回MIGRATEPAGE_SUCCESS表示页迁移成功。
 	for(pass = 0; pass < 10 && retry; pass++) {
 		retry = 0;
 
@@ -1416,6 +1427,7 @@ retry:
 						put_new_page, private, page,
 						pass > 2, mode, reason);
 			else
+				//尝试迁移页面page到新分配的页面newpage
 				rc = unmap_and_move(get_new_page, put_new_page,
 						private, page, pass > 2, mode,
 						reason);
