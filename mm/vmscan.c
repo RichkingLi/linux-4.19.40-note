@@ -3025,7 +3025,7 @@ retry:
 		vmpressure_prio(sc->gfp_mask, sc->target_mem_cgroup,
 				sc->priority);
 		sc->nr_scanned = 0;
-		shrink_zones(zonelist, sc);
+		shrink_zones(zonelist, sc);//页面分配进程的直接回收路径
 
 		if (sc->nr_reclaimed >= sc->nr_to_reclaim)
 			break;
@@ -3042,6 +3042,7 @@ retry:
 	} while (--sc->priority >= 0);
 
 	last_pgdat = NULL;
+	//扫描每一个区域，如果充满了固定的页面，则放弃它
 	for_each_zone_zonelist_nodemask(zone, z, zonelist, sc->reclaim_idx,
 					sc->nodemask) {
 		if (zone->zone_pgdat == last_pgdat)
@@ -3232,6 +3233,7 @@ unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 	 * 1 is returned so that the page allocator does not OOM kill at this
 	 * point.
 	 */
+	//如果在节流时发送了致命信号，不要进入回收,返回1
 	if (throttle_direct_reclaim(sc.gfp_mask, zonelist, nodemask))
 		return 1;
 
@@ -3240,6 +3242,7 @@ unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 				sc.gfp_mask,
 				sc.reclaim_idx);
 
+	//这是直接页面回收的主要入口点
 	nr_reclaimed = do_try_to_free_pages(zonelist, &sc);
 
 	trace_mm_vmscan_direct_reclaim_end(nr_reclaimed);

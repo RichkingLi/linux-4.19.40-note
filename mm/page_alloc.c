@@ -3791,20 +3791,21 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order,
 	int progress;
 	unsigned int noreclaim_flag;
 
-	cond_resched();
+	cond_resched();//主动让出cpu
 
 	/* We now go into synchronous reclaim */
-	cpuset_memory_pressure_bump();
+	cpuset_memory_pressure_bump();//计算内存压力
 	fs_reclaim_acquire(gfp_mask);
-	noreclaim_flag = memalloc_noreclaim_save();
+	noreclaim_flag = memalloc_noreclaim_save();//保存内存标志
 	reclaim_state.reclaimed_slab = 0;
 	current->reclaim_state = &reclaim_state;
-
+	
+	//尝试直接页面回收
 	progress = try_to_free_pages(ac->zonelist, order, gfp_mask,
 								ac->nodemask);
 
 	current->reclaim_state = NULL;
-	memalloc_noreclaim_restore(noreclaim_flag);
+	memalloc_noreclaim_restore(noreclaim_flag);//恢复内存标志
 	fs_reclaim_release(gfp_mask);
 
 	cond_resched();
@@ -3813,6 +3814,7 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order,
 }
 
 /* The really slow allocator path where we enter direct reclaim */
+//直接同步页面回收
 static inline struct page *
 __alloc_pages_direct_reclaim(gfp_t gfp_mask, unsigned int order,
 		unsigned int alloc_flags, const struct alloc_context *ac,
@@ -3820,12 +3822,13 @@ __alloc_pages_direct_reclaim(gfp_t gfp_mask, unsigned int order,
 {
 	struct page *page = NULL;
 	bool drained = false;
-
+	//真正缓慢的分配路径，直接同步页面回收  
 	*did_some_progress = __perform_reclaim(gfp_mask, order, ac);
 	if (unlikely(!(*did_some_progress)))
 		return NULL;
 
 retry:
+	//进行页面分配操作
 	page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac);
 
 	/*
@@ -3862,6 +3865,7 @@ static void wake_all_kswapds(unsigned int order, gfp_t gfp_mask,
 static inline unsigned int
 gfp_to_alloc_flags(gfp_t gfp_mask)
 {
+	//配置为最低水线和允许从其他节点分配
 	unsigned int alloc_flags = ALLOC_WMARK_MIN | ALLOC_CPUSET;
 
 	/* __GFP_HIGH is assumed to be the same as ALLOC_HIGH to save a branch. */
