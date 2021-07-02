@@ -1104,6 +1104,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 
 	cond_resched();
 
+	//遍历临时链表page_list
 	while (!list_empty(page_list)) {
 		struct address_space *mapping;
 		struct page *page;
@@ -1116,24 +1117,28 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		page = lru_to_page(page_list);
 		list_del(&page->lru);
 
-		if (!trylock_page(page))
+		if (!trylock_page(page))//如果页面被锁住则跳过
 			goto keep;
 
 		VM_BUG_ON_PAGE(PageActive(page), page);
 
-		sc->nr_scanned++;
+		sc->nr_scanned++;//增加扫描计数
 
+		//如果是page_evictable页，尝试设置activate并放到ret_page中
 		if (unlikely(!page_evictable(page)))
 			goto activate_locked;
 
+		//如果是映射到进程的页，但不允许回收映射则解锁后放到ret_page中
 		if (!sc->may_unmap && page_mapped(page))
 			goto keep_locked;
 
 		/* Double the slab pressure for mapped and swapcache pages */
+		//如果是映射页或者交换缓存的页就Double扫描计数，因为可扫描的页不应该快速结束也扫描，否则会影响系统性能
 		if ((page_mapped(page) || PageSwapCache(page)) &&
 		    !(PageAnon(page) && !PageSwapBacked(page)))
 			sc->nr_scanned++;
 
+		//标记是否允许文件系统操作
 		may_enter_fs = (sc->gfp_mask & __GFP_FS) ||
 			(PageSwapCache(page) && (sc->gfp_mask & __GFP_IO));
 
@@ -1143,12 +1148,13 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		 * will stall and start writing pages if the tail of the LRU
 		 * is all dirty unqueued pages.
 		 */
+		//判断是否为脏页或者在回写处理中
 		page_check_dirty_writeback(page, &dirty, &writeback);
 		if (dirty || writeback)
-			nr_dirty++;
+			nr_dirty++;//记录回写脏页数量
 
 		if (dirty && !writeback)
-			nr_unqueued_dirty++;
+			nr_unqueued_dirty++;//未回写脏页数量
 
 		/*
 		 * Treat this page as congested if the underlying BDI is or if
@@ -1156,7 +1162,9 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		 * pages marked for immediate reclaim are making it to the
 		 * end of the LRU a second time.
 		 */
+		//判断是否映射页，文件页返回MAPPING，匿名页返回NULL，交换缓存页返回SWAP
 		mapping = page_mapping(page);
+		//增加阻塞页框的两种情况：1.脏页或者在回写的页的inode标志位阻塞，2.回写的页标记正在回收
 		if (((dirty || writeback) && mapping &&
 		     inode_write_congested(mapping->host)) ||
 		    (writeback && PageReclaim(page)))
@@ -1204,8 +1212,10 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		 * memory pressure on the cache working set any longer than it
 		 * takes to write them to disk.
 		 */
+		//如果页处于回写状态中
 		if (PageWriteback(page)) {
 			/* Case 1 above */
+			//页在交换中
 			if (current_is_kswapd() &&
 			    PageReclaim(page) &&
 			    test_bit(PGDAT_WRITEBACK, &pgdat->flags)) {
@@ -1213,6 +1223,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 				goto activate_locked;
 
 			/* Case 2 above */
+				//页再回收中
 			} else if (sane_reclaim(sc) ||
 			    !PageReclaim(page) || !may_enter_fs) {
 				/*
@@ -1231,6 +1242,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 				goto activate_locked;
 
 			/* Case 3 above */
+			//不在交换也不在回收，则等待回写完毕
 			} else {
 				unlock_page(page);
 				wait_on_page_writeback(page);
@@ -1240,12 +1252,12 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 			}
 		}
 
-		if (!force_reclaim)
+		if (!force_reclaim)//如果没有设置强制回收则检查也的访问情况
 			references = page_check_references(page, sc);
 
 		switch (references) {
 		case PAGEREF_ACTIVATE:
-			goto activate_locked;
+			goto activate_locked;//近期访问次数大于1则设置为activate，并且放到ret_page中
 		case PAGEREF_KEEP:
 			nr_ref_keep++;
 			goto keep_locked;
@@ -1259,8 +1271,9 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		 * Try to allocate it some swap space here.
 		 * Lazyfree page could be freed directly
 		 */
+		//如果是匿名也且有后备缓存
 		if (PageAnon(page) && PageSwapBacked(page)) {
-			if (!PageSwapCache(page)) {
+			if (!PageSwapCache(page)) {//不在交换缓存中
 				if (!(sc->gfp_mask & __GFP_IO))
 					goto keep_locked;
 				if (PageTransHuge(page)) {
@@ -1294,7 +1307,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 				may_enter_fs = 1;
 
 				/* Adding to swap updated mapping */
-				mapping = page_mapping(page);
+				mapping = page_mapping(page);//添加到交换缓存中
 			}
 		} else if (unlikely(PageTransHuge(page))) {
 			/* Split file THP */
@@ -1306,18 +1319,19 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		 * The page is mapped into the page tables of one or more
 		 * processes. Try to unmap it here.
 		 */
+		//如果页有映射到进程
 		if (page_mapped(page)) {
 			enum ttu_flags flags = ttu_flags | TTU_BATCH_FLUSH;
 
 			if (unlikely(PageTransHuge(page)))
 				flags |= TTU_SPLIT_HUGE_PMD;
-			if (!try_to_unmap(page, flags)) {
+			if (!try_to_unmap(page, flags)) {//尝试接触映射
 				nr_unmap_fail++;
 				goto activate_locked;
 			}
 		}
 
-		if (PageDirty(page)) {
+		if (PageDirty(page)) {//如果是脏页
 			/*
 			 * Only kswapd can writeback filesystem pages
 			 * to avoid risk of stack overflow. But avoid
@@ -1328,6 +1342,12 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 			 * the rest of the LRU for clean pages and see
 			 * the same dirty pages again (PageReclaim).
 			 */
+			/*	如果这个是文件页，但是想要往下回收还要满足三个条件：
+				1.是kswapd线程，只有kswapd可以回写文件系统页面，以避免堆栈溢出的风险
+				2.是正在回收的页
+				3.是大量脏页处理的回写操作，只有当我们遇到许多脏页时才写页，避免将低效的单页IO
+				如果满足三个要求，可以往下走，否则走activate_locked设置为活动页
+			*/
 			if (page_is_file_cache(page) &&
 			    (!current_is_kswapd() || !PageReclaim(page) ||
 			     !test_bit(PGDAT_DIRTY, &pgdat->flags))) {
@@ -1343,11 +1363,11 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 				goto activate_locked;
 			}
 
-			if (references == PAGEREF_RECLAIM_CLEAN)
+			if (references == PAGEREF_RECLAIM_CLEAN)//如果被访问过就放到ret_page中
 				goto keep_locked;
-			if (!may_enter_fs)
+			if (!may_enter_fs)//不允许文件系统操作就放到ret_page中
 				goto keep_locked;
-			if (!sc->may_writepage)
+			if (!sc->may_writepage)//不允许回写则放到ret_page中
 				goto keep_locked;
 
 			/*
@@ -1355,8 +1375,9 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 			 * potentially exists to avoid CPU writes after IO
 			 * starts and then write it out here.
 			 */
+			//走到这里说明页面很脏。 如果可能存在可写条目，则刷新TLB，以避免IO启动后进行CPU写操作，然后在这里将其写入。
 			try_to_unmap_flush_dirty();
-			switch (pageout(page, mapping, sc)) {
+			switch (pageout(page, mapping, sc)) {//将页面回写出去操作
 			case PAGE_KEEP:
 				goto keep_locked;
 			case PAGE_ACTIVATE:
@@ -1455,7 +1476,7 @@ free_it:
 			mem_cgroup_uncharge(page);
 			(*get_compound_page_dtor(page))(page);
 		} else
-			list_add(&page->lru, &free_pages);
+			list_add(&page->lru, &free_pages);//将页面放入free_pages释放掉
 		continue;
 
 activate_locked:
@@ -1478,6 +1499,7 @@ keep:
 
 	mem_cgroup_uncharge_list(&free_pages);
 	try_to_unmap_flush();
+	//释放空闲页，没有释放成功则通过free_pages返回
 	free_unref_page_list(&free_pages);
 
 	list_splice(&ret_pages, page_list);
@@ -1493,7 +1515,7 @@ keep:
 		stat->nr_ref_keep = nr_ref_keep;
 		stat->nr_unmap_fail = nr_unmap_fail;
 	}
-	return nr_reclaimed;
+	return nr_reclaimed;//返回直接回收的页数量
 }
 
 unsigned long reclaim_clean_pages_from_list(struct zone *zone,
@@ -1898,12 +1920,13 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 	struct zone_reclaim_stat *reclaim_stat = &lruvec->reclaim_stat;
 	bool stalled = false;
 
+	//如果隔离页太多
 	while (unlikely(too_many_isolated(pgdat, file, sc))) {
 		if (stalled)
 			return 0;
 
 		/* wait a bit for the reclaimer. */
-		msleep(100);
+		msleep(100);//休眠等待一下回收器
 		stalled = true;
 
 		/* We are about to die and free our memory. Return now. */
@@ -1918,9 +1941,11 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 
 	spin_lock_irq(&pgdat->lru_lock);
 
+	//从不活动页链表的尾部取指定页数添加到临时链表page_list中
 	nr_taken = isolate_lru_pages(nr_to_scan, lruvec, &page_list,
 				     &nr_scanned, sc, isolate_mode, lru);
 
+	//做相关统计信息和更新操作
 	__mod_node_page_state(pgdat, NR_ISOLATED_ANON + file, nr_taken);
 	reclaim_stat->recent_scanned[file] += nr_taken;
 
@@ -1940,6 +1965,7 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 	if (nr_taken == 0)
 		return 0;
 
+	//处理临时链表page_list的所有页
 	nr_reclaimed = shrink_page_list(&page_list, pgdat, sc, 0,
 				&stat, false);
 
@@ -1957,6 +1983,7 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 				   nr_reclaimed);
 	}
 
+	//将部分不活动页转化为活动页并且放入活动页链表中
 	putback_inactive_pages(lruvec, &page_list);
 
 	__mod_node_page_state(pgdat, NR_ISOLATED_ANON + file, -nr_taken);
@@ -1964,6 +1991,8 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 	spin_unlock_irq(&pgdat->lru_lock);
 
 	mem_cgroup_uncharge_list(&page_list);
+	
+	//释放引用为0的顺序页面列表
 	free_unref_page_list(&page_list);
 
 	/*
@@ -1977,6 +2006,7 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 	 * the flushers simply cannot keep up with the allocation
 	 * rate. Nudge the flusher threads in case they are asleep.
 	 */
+	//如果脏页队列没有IO等待，则唤醒flusher冲刷线程将数据回写磁盘
 	if (stat.nr_unqueued_dirty == nr_taken)
 		wakeup_flusher_threads(WB_REASON_VMSCAN);
 
@@ -2731,6 +2761,8 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 
 			reclaimed = sc->nr_reclaimed;
 			scanned = sc->nr_scanned;
+			
+			//每个节点页回收的基本操作函数
 			shrink_node_memcg(pgdat, memcg, sc, &lru_pages);
 			node_lru_pages += lru_pages;
 
