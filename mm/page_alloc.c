@@ -3836,11 +3836,12 @@ retry:
 	 * pages are pinned on the per-cpu lists or in high alloc reserves.
 	 * Shrink them them and try again
 	 */
+	//如果在直接回收之后分配失败，可能是因为页面固定在每个cpu列表上或处于高分配预留中
 	if (!page && !drained) {
-		unreserve_highatomic_pageblock(ac, false);
-		drain_all_pages(NULL);
+		unreserve_highatomic_pageblock(ac, false);//unreserve处于高分配预留中的内存
+		drain_all_pages(NULL);//释放固定在每个cpu列表上页面
 		drained = true;
-		goto retry;
+		goto retry;//再试一次慢路径回收，分配内存
 	}
 
 	return page;

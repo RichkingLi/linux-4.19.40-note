@@ -2516,6 +2516,7 @@ static void shrink_node_memcg(struct pglist_data *pgdat, struct mem_cgroup *memc
 	struct blk_plug plug;
 	bool scan_adjusted;
 
+	//记录原始扫描目标，以便以后进行比例调整
 	get_scan_count(lruvec, memcg, sc, nr, lru_pages);
 
 	/* Record the original scan target for proportional adjustments later */
@@ -2535,7 +2536,7 @@ static void shrink_node_memcg(struct pglist_data *pgdat, struct mem_cgroup *memc
 	scan_adjusted = (global_reclaim(sc) && !current_is_kswapd() &&
 			 sc->priority == DEF_PRIORITY);
 
-	blk_start_plug(&plug);
+	blk_start_plug(&plug);//初始化blk_plug并在task_struct内跟踪它,一旦阻塞则刷新挂起任务
 	while (nr[LRU_INACTIVE_ANON] || nr[LRU_ACTIVE_FILE] ||
 					nr[LRU_INACTIVE_FILE]) {
 		unsigned long nr_anon, nr_file, percentage;
@@ -2770,6 +2771,7 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 				    memcg, sc->priority);
 
 			/* Record the group's reclaim efficiency */
+			//测量虚拟内存的压力，用于记录回收效率
 			vmpressure(sc->gfp_mask, memcg, false,
 				   sc->nr_scanned - scanned,
 				   sc->nr_reclaimed - reclaimed);
@@ -2797,6 +2799,7 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 		}
 
 		/* Record the subtree's reclaim efficiency */
+		//测量虚拟内存的压力，用于记录回收效率
 		vmpressure(sc->gfp_mask, sc->target_mem_cgroup, true,
 			   sc->nr_scanned - nr_scanned,
 			   sc->nr_reclaimed - nr_reclaimed);
@@ -2946,7 +2949,7 @@ static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 		 * Take care memory controller reclaiming has small influence
 		 * to global LRU.
 		 */
-		if (global_reclaim(sc)) {
+		if (global_reclaim(sc)) {//如果当前进行的是全局页回收
 			if (!cpuset_zone_allowed(zone,
 						 GFP_KERNEL | __GFP_HARDWALL))
 				continue;
@@ -2960,6 +2963,7 @@ static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 			 * noticeable problem, like transparent huge
 			 * page allocations.
 			 */
+			//如果可以压缩规整，并且有足够空间
 			if (IS_ENABLED(CONFIG_COMPACTION) &&
 			    sc->order > PAGE_ALLOC_COSTLY_ORDER &&
 			    compaction_ready(zone, sc)) {
@@ -3002,7 +3006,7 @@ static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 	 * Restore to original mask to avoid the impact on the caller if we
 	 * promoted it to __GFP_HIGHMEM.
 	 */
-	sc->gfp_mask = orig_mask;
+	sc->gfp_mask = orig_mask;//恢复到原来的掩码
 }
 
 static void snapshot_refaults(struct mem_cgroup *root_memcg, pg_data_t *pgdat)
@@ -3050,10 +3054,11 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
 retry:
 	delayacct_freepages_start();
 
-	if (global_reclaim(sc))
+	if (global_reclaim(sc))//如果当前进行的是全局页回收
 		__count_zid_vm_events(ALLOCSTALL, sc->reclaim_idx, 1);
 
 	do {
+		//通过reclaimer priority level来计算虚拟内存压力
 		vmpressure_prio(sc->gfp_mask, sc->target_mem_cgroup,
 				sc->priority);
 		sc->nr_scanned = 0;
@@ -3069,6 +3074,7 @@ retry:
 		 * If we're getting trouble reclaiming, start doing
 		 * writepage even in laptop mode.
 		 */
+		//回收过程中遇到了麻烦，则需要回写。
 		if (sc->priority < DEF_PRIORITY - 2)
 			sc->may_writepage = 1;
 	} while (--sc->priority >= 0);
@@ -3086,10 +3092,11 @@ retry:
 
 	delayacct_freepages_end();
 
-	if (sc->nr_reclaimed)
+	if (sc->nr_reclaimed)//直接回收页数为0则返回
 		return sc->nr_reclaimed;
 
 	/* Aborted reclaim to try compaction? don't OOM, then */
+	//如果可以压缩规整，则取消回收以尝试压缩
 	if (sc->compaction_ready)
 		return 1;
 
