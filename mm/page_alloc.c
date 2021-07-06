@@ -3483,7 +3483,7 @@ static inline struct page *
 __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 	const struct alloc_context *ac, unsigned long *did_some_progress)
 {
-	struct oom_control oc = {
+	struct oom_control oc = {//OOM控制参数
 		.zonelist = ac->zonelist,
 		.nodemask = ac->nodemask,
 		.memcg = NULL,
@@ -3498,6 +3498,7 @@ __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 	 * Acquire the oom lock.  If that fails, somebody else is
 	 * making progress for us.
 	 */
+	//尝试加锁，如果获取不到锁则返回
 	if (!mutex_trylock(&oom_lock)) {
 		*did_some_progress = 1;
 		schedule_timeout_uninterruptible(1);
@@ -3511,6 +3512,7 @@ __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 	 * attempt shall not depend on __GFP_DIRECT_RECLAIM && !__GFP_NORETRY
 	 * allocation which will never fail due to oom_lock already held.
 	 */
+	//尝试再次使用高水位分配内存一次，判断是否需要启动oom
 	page = get_page_from_freelist((gfp_mask | __GFP_HARDWALL) &
 				      ~__GFP_DIRECT_RECLAIM, order,
 				      ALLOC_WMARK_HIGH|ALLOC_CPUSET, ac);
@@ -3521,6 +3523,7 @@ __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 	if (current->flags & PF_DUMPCORE)
 		goto out;
 	/* The OOM killer will not help higher order allocs */
+	//OOM不可以分配高于PAGE_ALLOC_COSTLY_ORDER的阶数，也就是3阶
 	if (order > PAGE_ALLOC_COSTLY_ORDER)
 		goto out;
 	/*
@@ -3529,9 +3532,11 @@ __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 	 * because it is very likely that the caller has a more reasonable
 	 * fallback than shooting a random task.
 	 */
+	//__GFP_NOFAIL是不允许内存申请失败的情况，如果不允许失败则从out退出
 	if (gfp_mask & __GFP_RETRY_MAYFAIL)
 		goto out;
 	/* The OOM killer does not needlessly kill tasks for lowmem */
+	//OOM不会为低端内存启动，如果是要分配低端内存则从out退出
 	if (ac->high_zoneidx < ZONE_NORMAL)
 		goto out;
 	if (pm_suspended_storage())
@@ -3547,10 +3552,12 @@ __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 	 */
 
 	/* The OOM killer may not free memory on a specific node */
+	//OOM不会释放特定节点上的内存
 	if (gfp_mask & __GFP_THISNODE)
 		goto out;
 
 	/* Exhausted what can be done so it's blame time */
+	//经过上面各种情况，仍然需要进行OOM处理。调用out_of_memory()。
 	if (out_of_memory(&oc) || WARN_ON_ONCE(gfp_mask & __GFP_NOFAIL)) {
 		*did_some_progress = 1;
 
@@ -3558,6 +3565,7 @@ __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 		 * Help non-failing allocations by giving them access to memory
 		 * reserves
 		 */
+		//对于__GFP_NOFAIL的分配情况，需要降低分配标准到无水线
 		if (gfp_mask & __GFP_NOFAIL)
 			page = __alloc_pages_cpuset_fallback(gfp_mask, order,
 					ALLOC_NO_WATERMARKS, ac);
