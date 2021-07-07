@@ -497,10 +497,12 @@ bool process_shares_mm(struct task_struct *p, struct mm_struct *mm)
  * OOM Reaper kernel thread which tries to reap the memory used by the OOM
  * victim (if that is possible) to help the OOM killer to move on.
  */
-static struct task_struct *oom_reaper_th;
+static struct task_struct *oom_reaper_th;//oom_reaper内核线程的task_struct指针
+
+//OOM Reaper等待队列，oom_reaper线程在此等待，当有OOM产生的时候唤醒等待队列，并从oom_reaper_list中获取待收割进程结构体
 static DECLARE_WAIT_QUEUE_HEAD(oom_reaper_wait);
-static struct task_struct *oom_reaper_list;
-static DEFINE_SPINLOCK(oom_reaper_lock);
+static struct task_struct *oom_reaper_list;//待收割的进程
+static DEFINE_SPINLOCK(oom_reaper_lock);//oom线程锁
 
 bool __oom_reap_task_mm(struct mm_struct *mm)
 {
@@ -515,9 +517,9 @@ bool __oom_reap_task_mm(struct mm_struct *mm)
 	 */
 	set_bit(MMF_UNSTABLE, &mm->flags);
 
-	//遍历进程每一个vma
+	//遍历进程所有vma区域
 	for (vma = mm->mmap ; vma; vma = vma->vm_next) {
-		//如果是巨型页、锁住页、特殊物理页则跳过
+		//如果vma是被锁住、巨型页、物理特殊页则跳过
 		if (!can_madv_dontneed_vma(vma))
 			continue;
 
@@ -531,25 +533,25 @@ bool __oom_reap_task_mm(struct mm_struct *mm)
 		 * we do not want to block exit_mmap by keeping mm ref
 		 * count elevated without a good reason.
 		 */
+		//匿名的非共享页
 		if (vma_is_anonymous(vma) || !(vma->vm_flags & VM_SHARED)) {
 			const unsigned long start = vma->vm_start;
 			const unsigned long end = vma->vm_end;
 			struct mmu_gather tlb;
 
-			tlb_gather_mmu(&tlb, mm, start, end);//初始化mmu_gather结构
-			//通知mmu使某区域失效，成功返回0
+			tlb_gather_mmu(&tlb, mm, start, end);//初始化 mmu_gather 结构体用于页表拆卸
+			
+			//通知mmu使vma区域失效
 			if (mmu_notifier_invalidate_range_start_nonblock(mm, start, end)) {
-				tlb_finish_mmu(&tlb, start, end);//释放mmu_gather结构
+				tlb_finish_mmu(&tlb, start, end);//释放 mmu_gather 结构体
 				ret = false;
 				continue;
 			}
+			unmap_page_range(&tlb, vma, start, end, NULL);//系统解除vma映射
 			
-			//系统映射解除
-			unmap_page_range(&tlb, vma, start, end, NULL);
-			
-			//通知mmu使某区域失效完成
+			//通知mmu使vma区域失效完成
 			mmu_notifier_invalidate_range_end(mm, start, end);
-			tlb_finish_mmu(&tlb, start, end);//释放mmu_gather结构
+			tlb_finish_mmu(&tlb, start, end);//释放 mmu_gather 结构体
 		}
 	}
 
@@ -585,10 +587,12 @@ static bool oom_reap_task_mm(struct task_struct *tsk, struct mm_struct *mm)
 	trace_start_task_reaping(tsk->pid);
 
 	/* failed to reap part of the address space. Try again later */
+	//主要收割函数
 	ret = __oom_reap_task_mm(mm);
 	if (!ret)
 		goto out_finish;
 
+	//显示经过oom_reaper之后的victim进程所占用的内存信息
 	pr_info("oom_reaper: reaped process %d (%s), now anon-rss:%lukB, file-rss:%lukB, shmem-rss:%lukB\n",
 			task_pid_nr(tsk), tsk->comm,
 			K(get_mm_counter(mm, MM_ANONPAGES)),
@@ -610,7 +614,6 @@ static void oom_reap_task(struct task_struct *tsk)
 
 	/* Retry the down_read_trylock(mmap_sem) a few times */
 	//最多重试10次，每次间隔100ms，进行收割
-	//oom_reap_task_mm用于获取指定进程的内存空间地址
 	while (attempts++ < MAX_OOM_REAP_RETRIES && !oom_reap_task_mm(tsk, mm))
 		schedule_timeout_idle(HZ/10);
 
@@ -640,7 +643,7 @@ static int oom_reaper(void *unused)
 {
 	while (true) {
 		struct task_struct *tsk = NULL;
-		
+
 		//oom_reaper在此睡眠，直到有OOM产生并且通过wake_oom_reaper()唤醒
 		wait_event_freezable(oom_reaper_wait, oom_reaper_list != NULL);
 		spin_lock(&oom_reaper_lock);
