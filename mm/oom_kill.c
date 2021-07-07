@@ -515,7 +515,9 @@ bool __oom_reap_task_mm(struct mm_struct *mm)
 	 */
 	set_bit(MMF_UNSTABLE, &mm->flags);
 
+	//遍历进程每一个vma
 	for (vma = mm->mmap ; vma; vma = vma->vm_next) {
+		//如果是巨型页、锁住页、特殊物理页则跳过
 		if (!can_madv_dontneed_vma(vma))
 			continue;
 
@@ -534,15 +536,20 @@ bool __oom_reap_task_mm(struct mm_struct *mm)
 			const unsigned long end = vma->vm_end;
 			struct mmu_gather tlb;
 
-			tlb_gather_mmu(&tlb, mm, start, end);
+			tlb_gather_mmu(&tlb, mm, start, end);//初始化mmu_gather结构
+			//通知mmu使某区域失效，成功返回0
 			if (mmu_notifier_invalidate_range_start_nonblock(mm, start, end)) {
-				tlb_finish_mmu(&tlb, start, end);
+				tlb_finish_mmu(&tlb, start, end);//释放mmu_gather结构
 				ret = false;
 				continue;
 			}
+			
+			//系统映射解除
 			unmap_page_range(&tlb, vma, start, end, NULL);
+			
+			//通知mmu使某区域失效完成
 			mmu_notifier_invalidate_range_end(mm, start, end);
-			tlb_finish_mmu(&tlb, start, end);
+			tlb_finish_mmu(&tlb, start, end);//释放mmu_gather结构
 		}
 	}
 
@@ -602,6 +609,8 @@ static void oom_reap_task(struct task_struct *tsk)
 	struct mm_struct *mm = tsk->signal->oom_mm;
 
 	/* Retry the down_read_trylock(mmap_sem) a few times */
+	//最多重试10次，每次间隔100ms，进行收割
+	//oom_reap_task_mm用于获取指定进程的内存空间地址
 	while (attempts++ < MAX_OOM_REAP_RETRIES && !oom_reap_task_mm(tsk, mm))
 		schedule_timeout_idle(HZ/10);
 
@@ -609,6 +618,7 @@ static void oom_reap_task(struct task_struct *tsk)
 	    test_bit(MMF_OOM_SKIP, &mm->flags))
 		goto done;
 
+	//收割失败，显示系统hold住的lock信息
 	pr_info("oom_reaper: unable to reap pid:%d (%s)\n",
 		task_pid_nr(tsk), tsk->comm);
 	debug_show_all_locks();
@@ -630,7 +640,8 @@ static int oom_reaper(void *unused)
 {
 	while (true) {
 		struct task_struct *tsk = NULL;
-
+		
+		//oom_reaper在此睡眠，直到有OOM产生并且通过wake_oom_reaper()唤醒
 		wait_event_freezable(oom_reaper_wait, oom_reaper_list != NULL);
 		spin_lock(&oom_reaper_lock);
 		if (oom_reaper_list != NULL) {
@@ -640,7 +651,7 @@ static int oom_reaper(void *unused)
 		spin_unlock(&oom_reaper_lock);
 
 		if (tsk)
-			oom_reap_task(tsk);
+			oom_reap_task(tsk);//收割OOM选中的最bad进程
 	}
 
 	return 0;
@@ -664,6 +675,7 @@ static void wake_oom_reaper(struct task_struct *tsk)
 
 static int __init oom_init(void)
 {
+	//创建oom_reaper内核线程
 	oom_reaper_th = kthread_run(oom_reaper, NULL, "oom_reaper");
 	return 0;
 }
