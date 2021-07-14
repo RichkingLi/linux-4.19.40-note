@@ -14,15 +14,16 @@ typedef void * (mempool_alloc_t)(gfp_t gfp_mask, void *pool_data);
 typedef void (mempool_free_t)(void *element, void *pool_data);
 
 typedef struct mempool_s {
-	spinlock_t lock;
-	int min_nr;		/* nr of elements at *elements */
-	int curr_nr;		/* Current nr of elements at *elements */
-	void **elements;
+	spinlock_t lock;//防止多处理器并发而引入的锁
+	
+	int min_nr;	//最大元素个数，也是初始个数，当内存池被创建时，会调用alloc函数申请此变量相应数量的slab放到elements指向的指针数组中
+	int curr_nr;//当前元素个数，elements数组中空闲的成员数量
+	void **elements;//用来存放内存成员的二维数组，等于elements[min_nr][内存对象的长度]
 
-	void *pool_data;
-	mempool_alloc_t *alloc;
-	mempool_free_t *free;
-	wait_queue_head_t wait;
+	void *pool_data;//内存池的拥有者的私有数据结构(这个指针专门用来指向内存对象对应的缓存区的指针)
+	mempool_alloc_t *alloc;//内存分配函数
+	mempool_free_t *free;//内存释放函数
+	wait_queue_head_t wait;//当内存池为空时使用的等待队列，当内存池中空闲内存对象为空时，获取函数会将当前进程阻塞，直到超时或者有空闲内存对象时才会唤醒
 } mempool_t;
 
 static inline bool mempool_initialized(mempool_t *pool)

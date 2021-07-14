@@ -151,10 +151,10 @@ static void *remove_element(mempool_t *pool)
 void mempool_exit(mempool_t *pool)
 {
 	while (pool->curr_nr) {
-		void *element = remove_element(pool);
-		pool->free(element, pool->pool_data);
+		void *element = remove_element(pool);//把elements指针数组中的内存移除
+		pool->free(element, pool->pool_data);//释放elements数组中的所有对象
 	}
-	kfree(pool->elements);
+	kfree(pool->elements);//销毁elements指针数组
 	pool->elements = NULL;
 }
 EXPORT_SYMBOL(mempool_exit);
@@ -167,13 +167,14 @@ EXPORT_SYMBOL(mempool_exit);
  * Free all reserved elements in @pool and @pool itself.  This function
  * only sleeps if the free_fn() function sleeps.
  */
+//销毁一个内存池
 void mempool_destroy(mempool_t *pool)
 {
 	if (unlikely(!pool))
 		return;
 
-	mempool_exit(pool);
-	kfree(pool);
+	mempool_exit(pool);//释放内存池中的内存块
+	kfree(pool);//释放内存池结构体
 }
 EXPORT_SYMBOL(mempool_destroy);
 
@@ -181,13 +182,15 @@ int mempool_init_node(mempool_t *pool, int min_nr, mempool_alloc_t *alloc_fn,
 		      mempool_free_t *free_fn, void *pool_data,
 		      gfp_t gfp_mask, int node_id)
 {
-	spin_lock_init(&pool->lock);
+	//初始化内存池的相关参数
+	spin_lock_init(&pool->lock);//初始化锁
 	pool->min_nr	= min_nr;
 	pool->pool_data = pool_data;
 	pool->alloc	= alloc_fn;
 	pool->free	= free_fn;
-	init_waitqueue_head(&pool->wait);
+	init_waitqueue_head(&pool->wait);//初始化等待队列
 
+	//分配一个长度为min_nr的数组用于存放申请后对象的指针
 	pool->elements = kmalloc_array_node(min_nr, sizeof(void *),
 					    gfp_mask, node_id);
 	if (!pool->elements)
@@ -196,15 +199,17 @@ int mempool_init_node(mempool_t *pool, int min_nr, mempool_alloc_t *alloc_fn,
 	/*
 	 * First pre-allocate the guaranteed number of buffers.
 	 */
+	//首先保证预分配的缓冲区数量
 	while (pool->curr_nr < pool->min_nr) {
 		void *element;
 
+		//调用pool->alloc函数min_nr次
 		element = pool->alloc(gfp_mask, pool->pool_data);
-		if (unlikely(!element)) {
+		if (unlikely(!element)) {//如果申请不到element，则直接销毁此内存池
 			mempool_exit(pool);
 			return -ENOMEM;
 		}
-		add_element(pool, element);
+		add_element(pool, element);//添加到elements指针数组中
 	}
 
 	return 0;
@@ -246,6 +251,7 @@ EXPORT_SYMBOL(mempool_init);
  * functions might sleep - as long as the mempool_alloc() function is not called
  * from IRQ contexts.
  */
+ //创建一个内存池对象
 mempool_t *mempool_create(int min_nr, mempool_alloc_t *alloc_fn,
 				mempool_free_t *free_fn, void *pool_data)
 {
@@ -254,23 +260,35 @@ mempool_t *mempool_create(int min_nr, mempool_alloc_t *alloc_fn,
 }
 EXPORT_SYMBOL(mempool_create);
 
+/******************
+创建一个内存池对象
+参数：
+min_nr ： 	为内存池分配的最小内存成员数量
+alloc_fn ： 用户自定义内存分配函数(可以使用系统定义函数)
+free_fn :	用户自定义内存释放函数(可以使用系统定义函数)
+pool.data ：根据用户自定义内存分配函数所提供的可选私有数据，一般是缓存区指针
+gfp_mask ： 内存分配掩码
+node_id ： 	内存节点的id
+******************/
 mempool_t *mempool_create_node(int min_nr, mempool_alloc_t *alloc_fn,
 			       mempool_free_t *free_fn, void *pool_data,
 			       gfp_t gfp_mask, int node_id)
 {
 	mempool_t *pool;
 
+	//为内存池对象分配内存
 	pool = kzalloc_node(sizeof(*pool), gfp_mask, node_id);
 	if (!pool)
 		return NULL;
 
+	//初始化内存池
 	if (mempool_init_node(pool, min_nr, alloc_fn, free_fn, pool_data,
 			      gfp_mask, node_id)) {
 		kfree(pool);
 		return NULL;
 	}
 
-	return pool;
+	return pool;//返回内存池结构体
 }
 EXPORT_SYMBOL(mempool_create_node);
 
@@ -364,6 +382,7 @@ EXPORT_SYMBOL(mempool_resize);
  * fail if called from an IRQ context.)
  * Note: using __GFP_ZERO is not supported.
  */
+//内存池分配对象
 void *mempool_alloc(mempool_t *pool, gfp_t gfp_mask)
 {
 	void *element;
@@ -371,32 +390,41 @@ void *mempool_alloc(mempool_t *pool, gfp_t gfp_mask)
 	wait_queue_entry_t wait;
 	gfp_t gfp_temp;
 
+	//形参gfp_mask中不能包含_GFP_ZERO
 	VM_WARN_ON_ONCE(gfp_mask & __GFP_ZERO);
+	
+	//如果有__GFP_WAIT标志，则会先阻塞，切换进程
+	//#define might_sleep_if(cond) do { if (cond) might_sleep(); } while (0)
 	might_sleep_if(gfp_mask & __GFP_DIRECT_RECLAIM);
 
-	gfp_mask |= __GFP_NOMEMALLOC;	/* don't allocate emergency reserves */
-	gfp_mask |= __GFP_NORETRY;	/* don't loop in __alloc_pages */
-	gfp_mask |= __GFP_NOWARN;	/* failures are OK */
+	gfp_mask |= __GFP_NOMEMALLOC;//不使用预留内存
+	gfp_mask |= __GFP_NORETRY;//分配页时如果失败则返回，不进行重试
+	gfp_mask |= __GFP_NOWARN;//分配失败不提供警告
 
+	//gfp_mask只保留__GFP_DIRECT_RECLAIM和__GFP_IO标志
 	gfp_temp = gfp_mask & ~(__GFP_DIRECT_RECLAIM|__GFP_IO);
 
 repeat_alloc:
 
+	//使用内存池中的alloc函数进行分配对象
 	element = pool->alloc(gfp_temp, pool->pool_data);
 	if (likely(element != NULL))
 		return element;
 
+	//给内存池上锁，获取后此段临界区禁止中断和抢占
 	spin_lock_irqsave(&pool->lock, flags);
+	
+	//如果当前内存池中有空闲数量
 	if (likely(pool->curr_nr)) {
-		element = remove_element(pool);
-		spin_unlock_irqrestore(&pool->lock, flags);
+		element = remove_element(pool);//从内存池中获取内存对象
+		spin_unlock_irqrestore(&pool->lock, flags);//解锁
 		/* paired with rmb in mempool_free(), read comment there */
-		smp_wmb();
+		smp_wmb();//写内存屏障，保证之前的写操作已经完成
 		/*
 		 * Update the allocation stack trace as this is more useful
 		 * for debugging.
 		 */
-		kmemleak_update_trace(element);
+		kmemleak_update_trace(element);//用于debug
 		return element;
 	}
 
@@ -404,20 +432,25 @@ repeat_alloc:
 	 * We use gfp mask w/o direct reclaim or IO for the first round.  If
 	 * alloc failed with that and @pool was empty, retry immediately.
 	 */
+	//这里是内存池中也没有空闲内存对象的时候进行的操作
+	
+	//如果gfp_temp != gfp_mask
 	if (gfp_temp != gfp_mask) {
 		spin_unlock_irqrestore(&pool->lock, flags);
 		gfp_temp = gfp_mask;
-		goto repeat_alloc;
+		goto repeat_alloc;//跳到repeat_alloc重新获取一次
 	}
 
 	/* We must not sleep if !__GFP_DIRECT_RECLAIM */
+	//传入的参数gfp_mask不允许回收的等待，分配不到内存则直接退出
 	if (!(gfp_mask & __GFP_DIRECT_RECLAIM)) {
 		spin_unlock_irqrestore(&pool->lock, flags);
 		return NULL;
 	}
 
 	/* Let's wait for someone else to return an element to @pool */
-	init_wait(&wait);
+	init_wait(&wait);//初始化wait等待进程
+	//加入到内存池的等待队列中，等待当内存池中有空闲对象或者等待超时
 	prepare_to_wait(&pool->wait, &wait, TASK_UNINTERRUPTIBLE);
 
 	spin_unlock_irqrestore(&pool->lock, flags);
@@ -426,10 +459,10 @@ repeat_alloc:
 	 * FIXME: this should be io_schedule().  The timeout is there as a
 	 * workaround for some DM problems in 2.6.18.
 	 */
-	io_schedule_timeout(5*HZ);
+	io_schedule_timeout(5*HZ);//阻塞等待5秒
 
-	finish_wait(&pool->wait, &wait);
-	goto repeat_alloc;
+	finish_wait(&pool->wait, &wait);//从内存池的等待队列删除此进程
+	goto repeat_alloc;//跳转到repeat_alloc，重新尝试获取内存对象
 }
 EXPORT_SYMBOL(mempool_alloc);
 
@@ -441,10 +474,12 @@ EXPORT_SYMBOL(mempool_alloc);
  *
  * this function only sleeps if the free_fn() function sleeps.
  */
+// 内存池释放内存对象操作
 void mempool_free(void *element, mempool_t *pool)
 {
 	unsigned long flags;
 
+	//传入的对象为空，则直接退出
 	if (unlikely(element == NULL))
 		return;
 
@@ -462,7 +497,7 @@ void mempool_free(void *element, mempool_t *pool)
 	 * may end up using curr_nr value which is from before allocation
 	 * of @p without the following rmb.
 	 */
-	smp_rmb();
+	smp_rmb();//读内存屏障
 
 	/*
 	 * For correctness, we need a test which is guaranteed to trigger
@@ -481,17 +516,18 @@ void mempool_free(void *element, mempool_t *pool)
 	 * ensures that there will be frees which return elements to the
 	 * pool waking up the waiters.
 	 */
+	//如果当前内存池中空闲的内存对象少于内存池中应当保存的内存对象的数量时，优先把释放的对象加入到内存池空闲数组中
 	if (unlikely(pool->curr_nr < pool->min_nr)) {
 		spin_lock_irqsave(&pool->lock, flags);
 		if (likely(pool->curr_nr < pool->min_nr)) {
-			add_element(pool, element);
+			add_element(pool, element);//将用户释放的element重新加到缓存而当中
 			spin_unlock_irqrestore(&pool->lock, flags);
-			wake_up(&pool->wait);
+			wake_up(&pool->wait);//唤醒等待队列，目前已经有人释放内存，可以再次申请这个内存来使用
 			return;
 		}
 		spin_unlock_irqrestore(&pool->lock, flags);
 	}
-	pool->free(element, pool->pool_data);
+	pool->free(element, pool->pool_data);//直接调用释放函数
 }
 EXPORT_SYMBOL(mempool_free);
 
