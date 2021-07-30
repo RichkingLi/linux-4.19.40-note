@@ -32,10 +32,10 @@ struct mountpoint {
 };
 
 struct mount {
-	struct hlist_node mnt_hash;
-	struct mount *mnt_parent;
-	struct dentry *mnt_mountpoint;
-	struct vfsmount mnt;
+	struct hlist_node mnt_hash;//散列表
+	struct mount *mnt_parent;//父亲文件系统
+	struct dentry *mnt_mountpoint;//挂载点的目录
+	struct vfsmount mnt;//文件系统的挂载信息，结构体包含根目录和超级块
 	union {
 		struct rcu_head mnt_rcu;
 		struct llist_node mnt_llist;
@@ -46,26 +46,26 @@ struct mount {
 	int mnt_count;
 	int mnt_writers;
 #endif
-	struct list_head mnt_mounts;	/* list of children, anchored here */
-	struct list_head mnt_child;	/* and going through their mnt_child */
-	struct list_head mnt_instance;	/* mount instance on sb->s_mounts */
-	const char *mnt_devname;	/* Name of device e.g. /dev/dsk/hda1 */
+	struct list_head mnt_mounts;//子文件系统链表头
+	struct list_head mnt_child;//父文件系统的mnt_mounts
+	struct list_head mnt_instance;//把挂载描述符添加到超级块的挂载实例链表中
+	const char *mnt_devname;//指向存储设备的名称，比如/dev/hda1 
 	struct list_head mnt_list;
 	struct list_head mnt_expire;	/* link in fs-specific expiry list */
-	struct list_head mnt_share;	/* circular list of shared mounts */
-	struct list_head mnt_slave_list;/* list of slave mounts */
-	struct list_head mnt_slave;	/* slave list entry */
-	struct mount *mnt_master;	/* slave is on master->mnt_slave_list */
-	struct mnt_namespace *mnt_ns;	/* containing namespace */
-	struct mountpoint *mnt_mp;	/* where is it mounted */
-	struct hlist_node mnt_mp_list;	/* list mounts with the same mountpoint */
+	struct list_head mnt_share;//共享挂载的循环链表
+	struct list_head mnt_slave_list;//从属挂载的链表
+	struct list_head mnt_slave;//用于从属挂载的链表
+	struct mount *mnt_master;//指向主挂载文件系统
+	struct mnt_namespace *mnt_ns;//指向挂载命名空间
+	struct mountpoint *mnt_mp;//指向挂载点
+	struct hlist_node mnt_mp_list;//把挂载描述符加入同一个挂载点的挂载描述符链表
 	struct list_head mnt_umounting; /* list entry for umount propagation */
 #ifdef CONFIG_FSNOTIFY
 	struct fsnotify_mark_connector __rcu *mnt_fsnotify_marks;
 	__u32 mnt_fsnotify_mask;
 #endif
-	int mnt_id;			/* mount identifier */
-	int mnt_group_id;		/* peer group identifier */
+	int mnt_id;//挂载id
+	int mnt_group_id;////挂载组id
 	int mnt_expiry_mark;		/* true if marked for expiry */
 	struct hlist_head mnt_pins;
 	struct fs_pin mnt_umount;

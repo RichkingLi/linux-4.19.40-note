@@ -87,35 +87,35 @@ extern struct dentry_stat_t dentry_stat;
 
 struct dentry {
 	/* RCU lookup touched fields */
-	unsigned int d_flags;		/* protected by d_lock */
-	seqcount_t d_seq;		/* per dentry seqlock */
-	struct hlist_bl_node d_hash;	/* lookup hash list */
-	struct dentry *d_parent;	/* parent directory */
-	struct qstr d_name;
-	struct inode *d_inode;		/* Where the name belongs to - NULL is
-					 * negative */
-	unsigned char d_iname[DNAME_INLINE_LEN];	/* small names */
+	unsigned int d_flags;//目录项缓存标识符，由d_lock保护
+	seqcount_t d_seq;//目录项对象的顺序锁
+	struct hlist_bl_node d_hash;//散列表，方便查找
+	struct dentry *d_parent;//父目录的目录项对象
+	struct qstr d_name;//目录项名称
+	struct inode *d_inode;//该目录项下的索引节点
+					
+	unsigned char d_iname[DNAME_INLINE_LEN];//存放短的文件名称
 
 	/* Ref lookup also touches following */
-	struct lockref d_lockref;	/* per-dentry lock and refcount */
-	const struct dentry_operations *d_op;
-	struct super_block *d_sb;	/* The root of the dentry tree */
-	unsigned long d_time;		/* used by d_revalidate */
-	void *d_fsdata;			/* fs-specific data */
+	struct lockref d_lockref;//每个目录项的锁
+	const struct dentry_operations *d_op;//目录项操作方法函数
+	struct super_block *d_sb;//目录项所在的超级块
+	unsigned long d_time;//重置时间
+	void *d_fsdata;//文件系统特有数据
 
 	union {
-		struct list_head d_lru;		/* LRU list */
-		wait_queue_head_t *d_wait;	/* in-lookup ones only */
+		struct list_head d_lru;	//未使用链表的
+		wait_queue_head_t *d_wait;//等待队列
 	};
-	struct list_head d_child;	/* child of parent list */
-	struct list_head d_subdirs;	/* our children */
+	struct list_head d_child;//目录项下的子目录项链表
+	struct list_head d_subdirs;//目录项下所有目录项链表
 	/*
 	 * d_alias and d_rcu can share memory
 	 */
 	union {
-		struct hlist_node d_alias;	/* inode alias list */
+		struct hlist_node d_alias;//索引节点别名链表
 		struct hlist_bl_node d_in_lookup_hash;	/* only for in-lookup ones */
-	 	struct rcu_head d_rcu;
+	 	struct rcu_head d_rcu;//rcu加锁
 	} d_u;
 } __randomize_layout;
 
@@ -132,15 +132,28 @@ enum dentry_d_lock_class
 };
 
 struct dentry_operations {
+	//判断目录项对象是否有效
 	int (*d_revalidate)(struct dentry *, unsigned int);
 	int (*d_weak_revalidate)(struct dentry *, unsigned int);
+	
+	//目录项对象生产散列值，加入散列表是需要此函数
 	int (*d_hash)(const struct dentry *, struct qstr *);
+	
+	//文件名对比，根据文件系统类型定制，因为有些文件系统不区分大小写
 	int (*d_compare)(const struct dentry *,
 			unsigned int, const char *, const struct qstr *);
+			
+	//删除目录项对象，当d_count为0时调用
 	int (*d_delete)(const struct dentry *);
+	
+	//创建和初始化目录项对象
 	int (*d_init)(struct dentry *);
+	
+	//释放目录项对象，默认情况下什么都不做
 	void (*d_release)(struct dentry *);
 	void (*d_prune)(struct dentry *);
+	
+	//释放索引节点，当磁盘索引被删除时调用
 	void (*d_iput)(struct dentry *, struct inode *);
 	char *(*d_dname)(struct dentry *, char *, int);
 	struct vfsmount *(*d_automount)(struct path *);
