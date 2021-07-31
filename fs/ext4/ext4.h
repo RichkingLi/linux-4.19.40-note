@@ -717,7 +717,7 @@ struct ext4_inode {
 		struct {
 			__u32  m_i_reserved1;
 		} masix1;
-	} osd1;				/* OS dependent 1 */
+	} osd1;				/* 特定的os信息1 */
 	__le32	i_block[EXT4_N_BLOCKS];/* 文件内容块号码 */
 	__le32	i_generation;	/* 文件版本 */
 	__le32	i_file_acl_lo;	/* File ACL */
@@ -725,10 +725,10 @@ struct ext4_inode {
 	__le32	i_obso_faddr;	/* Obsoleted fragment address */
 	union {
 		struct {
-			__le16	l_i_blocks_high; /* were l_i_reserved1 */
-			__le16	l_i_file_acl_high;
-			__le16	l_i_uid_high;	/* these 2 fields */
-			__le16	l_i_gid_high;	/* were reserved2[0] */
+			__le16	l_i_blocks_high; /* 数据块数高16位 */
+			__le16	l_i_file_acl_high;//高16位的文件ACL
+			__le16	l_i_uid_high;	/* 所有者id的高16位 */
+			__le16	l_i_gid_high;	/* 组ID的高16位 */
 			__le16	l_i_checksum_lo;/* crc32c(uuid+inum+inode) LE */
 			__le16	l_i_reserved;
 		} linux2;
@@ -744,16 +744,16 @@ struct ext4_inode {
 			__le16	m_i_file_acl_high;
 			__u32	m_i_reserved2[2];
 		} masix2;
-	} osd2;				/* OS dependent 2 */
-	__le16	i_extra_isize;
+	} osd2;				/* 特定的os信息2 */
+	__le16	i_extra_isize;//extra大小
 	__le16	i_checksum_hi;	/* crc32c(uuid+inum+inode) BE */
-	__le32  i_ctime_extra;  /* extra Change time      (nsec << 2 | epoch) */
-	__le32  i_mtime_extra;  /* extra Modification time(nsec << 2 | epoch) */
-	__le32  i_atime_extra;  /* extra Access time      (nsec << 2 | epoch) */
-	__le32  i_crtime;       /* File Creation time */
-	__le32  i_crtime_extra; /* extra FileCreationtime (nsec << 2 | epoch) */
-	__le32  i_version_hi;	/* high 32 bits for 64-bit version */
-	__le32	i_projid;	/* Project ID */
+	__le32  i_ctime_extra;  /* extra修改inode时间(nsec << 2 | epoch) */
+	__le32  i_mtime_extra;  /* extra修改文件时间(nsec << 2 | epoch) */
+	__le32  i_atime_extra;  /* extra访问时间(nsec << 2 | epoch) */
+	__le32  i_crtime;       /* 文件创建时间(nsec << 2 | epoch) */
+	__le32  i_crtime_extra; /* extra 文件创建时间 (nsec << 2 | epoch) */
+	__le32  i_version_hi;	/* 64位版本号高32位 */
+	__le32	i_projid;	/* 项目ID */
 };
 
 struct move_extent {
