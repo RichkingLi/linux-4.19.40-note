@@ -707,37 +707,37 @@ static struct mountpoint *get_mountpoint(struct dentry *dentry)
 	struct mountpoint *mp, *new = NULL;
 	int ret;
 
-	if (d_mountpoint(dentry)) {
-		/* might be worth a WARN_ON() */
+	if (d_mountpoint(dentry)) {//设置dentry为挂载点
+		/* dentry不在使用，使用数减一 */
 		if (d_unlinked(dentry))
 			return ERR_PTR(-ENOENT);
 mountpoint:
-		read_seqlock_excl(&mount_lock);
-		mp = lookup_mountpoint(dentry);
-		read_sequnlock_excl(&mount_lock);
+		read_seqlock_excl(&mount_lock);//mount顺序锁上锁
+		mp = lookup_mountpoint(dentry);//从mountpoint hash表 查找mountpoint
+		read_sequnlock_excl(&mount_lock);//mount顺序锁解锁
 		if (mp)
-			goto done;
+			goto done;//找到直接返回mountpoint实例 
 	}
 
-	if (!new)
+	if (!new)//mountpoint哈希表中没有，找到需要分配
 		new = kmalloc(sizeof(struct mountpoint), GFP_KERNEL);
 	if (!new)
 		return ERR_PTR(-ENOMEM);
 
 
-	/* Exactly one processes may set d_mounted */
+	/* 设置挂载点标志 */
 	ret = d_set_mounted(dentry);
 
-	/* Someone else set d_mounted? */
+	/* 其他人在设置，回到mountpoint再来一次 */
 	if (ret == -EBUSY)
 		goto mountpoint;
 
-	/* The dentry is not available as a mountpoint? */
+	/* 该dentry不能作为安装点使用则结束 */
 	mp = ERR_PTR(ret);
 	if (ret)
 		goto done;
 
-	/* Add the new mountpoint to the hash table */
+	/* 将新的挂载点添加到散列表中 */
 	read_seqlock_excl(&mount_lock);
 	new->m_dentry = dentry;
 	new->m_count = 1;
@@ -2039,30 +2039,30 @@ static int attach_recursive_mnt(struct mount *source_mnt,
 static struct mountpoint *lock_mount(struct path *path)
 {
 	struct vfsmount *mnt;
-	struct dentry *dentry = path->dentry;
+	struct dentry *dentry = path->dentry;//获得挂载目录的dentry 
 retry:
-	inode_lock(dentry->d_inode);
-	if (unlikely(cant_mount(dentry))) {
+	inode_lock(dentry->d_inode);//申请inode的读写信号量 
+	if (unlikely(cant_mount(dentry))) {//判断挂载目录能否被挂载
 		inode_unlock(dentry->d_inode);
 		return ERR_PTR(-ENOENT);
 	}
-	namespace_lock();
-	mnt = lookup_mnt(path);
-	if (likely(!mnt)) {
-		struct mountpoint *mp = get_mountpoint(dentry);
+	namespace_lock();//命名空间读写信号量减一
+	mnt = lookup_mnt(path);//查找挂载在path上的第一个子mount
+	if (likely(!mnt)) {//mnt为空 说明没有文件系统挂载在这个path上
+		struct mountpoint *mp = get_mountpoint(dentry);//从dentry目录获取挂载点
 		if (IS_ERR(mp)) {
-			namespace_unlock();
-			inode_unlock(dentry->d_inode);
-			return mp;
+			namespace_unlock();//命名空间读写信号量加一
+			inode_unlock(dentry->d_inode);//释放inode的读写信号量 
+			return mp;//返回找到的挂载点实例 
 		}
-		return mp;
+		return mp;//返回找到的挂载点实例 
 	}
-	namespace_unlock();
-	inode_unlock(path->dentry->d_inode);
+	namespace_unlock();//命名空间读写信号量加一
+	inode_unlock(path->dentry->d_inode);//释放inode的读写信号量 
 	path_put(path);
-	path->mnt = mnt;
-	dentry = path->dentry = dget(mnt->mnt_root);
-	goto retry;
+	path->mnt = mnt;//path->mnt指向找到的vfsmount
+	dentry = path->dentry = dget(mnt->mnt_root);////path->dentry指向找到的vfsmount的根dentry
+	goto retry;//继续查找下一个挂载
 }
 
 static void unlock_mount(struct mountpoint *where)
@@ -2418,12 +2418,15 @@ static int do_add_mount(struct mount *newmnt, struct path *path, int mnt_flags)
 
 	mnt_flags &= ~MNT_INTERNAL_FLAGS;
 
+	//这里不是简单的加锁,而是寻找挂载点，如果挂载目录是挂载点，则将最后一次挂载的文件系统根目录作为挂载点    
 	mp = lock_mount(path);
 	if (IS_ERR(mp))
 		return PTR_ERR(mp);
 
+	//使用container_of函数通过vfsmount找到父mount
 	parent = real_mount(path->mnt);
 	err = -EINVAL;
+	//从这里开始有很多检查，如检查装载实例应该属于本进程的装载名字空间
 	if (unlikely(!check_mnt(parent))) {
 		/* that's acceptable only for automounts done in private ns */
 		if (!(mnt_flags & MNT_SHRINKABLE))
@@ -2433,17 +2436,19 @@ static int do_add_mount(struct mount *newmnt, struct path *path, int mnt_flags)
 			goto unlock;
 	}
 
-	/* Refuse the same filesystem on the same mount point */
 	err = -EBUSY;
+	/* 不可以在相同挂载点上挂载相同的文件系统 */
 	if (path->mnt->mnt_sb == newmnt->mnt.mnt_sb &&
 	    path->mnt->mnt_root == path->dentry)
 		goto unlock;
 
 	err = -EINVAL;
+	//新文件系统的挂载实例的根inode不应该是一个符号链接
 	if (d_is_symlink(newmnt->mnt.mnt_root))
 		goto unlock;
 
 	newmnt->mnt.mnt_flags = mnt_flags;
+	//把newmnt加入到全局文件系统树中
 	err = graft_tree(newmnt, parent, mp);
 
 unlock:
@@ -3325,7 +3330,8 @@ static bool mnt_already_visible(struct mnt_namespace *ns, struct vfsmount *new,
 	struct mount *mnt;
 	bool visible = false;
 
-	down_read(&namespace_sem);
+	down_read(&namespace_sem);//命名空间信号量减一
+	//遍历命名空间下的所有挂载结构体（大遍历）
 	list_for_each_entry(mnt, &ns->list, mnt_list) {
 		struct mount *child;
 		int mnt_flags;
@@ -3333,22 +3339,21 @@ static bool mnt_already_visible(struct mnt_namespace *ns, struct vfsmount *new,
 		if (mnt->mnt.mnt_sb->s_type != new->mnt_sb->s_type)
 			continue;
 
-		/* This mount is not fully visible if it's root directory
-		 * is not the root directory of the filesystem.
-		 */
+		//mount结构体的根目录不是超级快的根目录，说明该挂载是不完全可见的，直接跳过
 		if (mnt->mnt.mnt_root != mnt->mnt.mnt_sb->s_root)
 			continue;
 
 		/* A local view of the mount flags */
 		mnt_flags = mnt->mnt.mnt_flags;
 
-		/* Don't miss readonly hidden in the superblock flags */
+		/* 如果超级快标志是只读，则挂载标志也要只读 */
 		if (sb_rdonly(mnt->mnt.mnt_sb))
 			mnt_flags |= MNT_LOCK_READONLY;
 
 		/* Verify the mount flags are equal to or more permissive
 		 * than the proposed new mount.
 		 */
+		//验证挂载标志的权限
 		if ((mnt_flags & MNT_LOCK_READONLY) &&
 		    !(new_flags & MNT_READONLY))
 			continue;
@@ -3360,24 +3365,25 @@ static bool mnt_already_visible(struct mnt_namespace *ns, struct vfsmount *new,
 		 * locked child mounts that cover anything except for
 		 * empty directories.
 		 */
+		//遍历其子挂载结构体（小遍历）
 		list_for_each_entry(child, &mnt->mnt_mounts, mnt_child) {
 			struct inode *inode = child->mnt_mountpoint->d_inode;
-			/* Only worry about locked mounts */
+			/* 如果是锁住的则跳过 */
 			if (!(child->mnt.mnt_flags & MNT_LOCKED))
 				continue;
-			/* Is the directory permanetly empty? */
+			/* 如果目录为空则结束遍历（小遍历） */
 			if (!is_empty_dir_inode(inode))
 				goto next;
 		}
-		/* Preserve the locked attributes */
+		/* 保留锁定的属性 */
 		*new_mnt_flags |= mnt_flags & (MNT_LOCK_READONLY | \
 					       MNT_LOCK_ATIME);
 		visible = true;
-		goto found;
+		goto found;//只要有一个可见就结束（大遍历）
 	next:	;
 	}
 found:
-	up_read(&namespace_sem);
+	up_read(&namespace_sem);//命名空间信号量加一
 	return visible;
 }
 
