@@ -3547,11 +3547,15 @@ static void ext4_set_resv_clusters(struct super_block *sb)
 static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 {
 	struct dax_device *dax_dev = fs_dax_get_by_bdev(sb->s_bdev);
-	char *orig_data = kstrdup(data, GFP_KERNEL);
+	char *orig_data = kstrdup(data, GFP_KERNEL);//分配挂载选项的内存并且拷贝
 	struct buffer_head *bh;
 	struct ext4_super_block *es = NULL;
+	
+	//分配内存存放文件系统私有信息
 	struct ext4_sb_info *sbi = kzalloc(sizeof(*sbi), GFP_KERNEL);
 	ext4_fsblk_t block;
+	
+	//根据data数值计算超级块所在的块，data中可以指定超级块的块号
 	ext4_fsblk_t sb_block = get_sb_block(&data);
 	ext4_fsblk_t logical_sb_block;
 	unsigned long offset = 0;
@@ -3573,11 +3577,14 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		goto out_free_base;
 
 	sbi->s_daxdev = dax_dev;
+	
+	//分配块组锁
 	sbi->s_blockgroup_lock =
 		kzalloc(sizeof(struct blockgroup_lock), GFP_KERNEL);
 	if (!sbi->s_blockgroup_lock)
 		goto out_free_base;
 
+	//填些系统私有信息
 	sb->s_fs_info = sbi;
 	sbi->s_sb = sb;
 	sbi->s_inode_readahead_blks = EXT4_DEF_INODE_READAHEAD_BLKS;
@@ -3591,6 +3598,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 	/* -EINVAL is default */
 	ret = -EINVAL;
+	
+	//计算块大小，最小为EXT4_MIN_BLOCK_SIZE，即1K
 	blocksize = sb_min_blocksize(sb, EXT4_MIN_BLOCK_SIZE);
 	if (!blocksize) {
 		ext4_msg(sb, KERN_ERR, "unable to set blocksize");
@@ -3601,13 +3610,15 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	 * The ext4 superblock will not be buffer aligned for other than 1kB
 	 * block sizes.  We need to calculate the offset from buffer start.
 	 */
+	//ext4超级快不会进行缓存区对齐，需要计算偏移量
 	if (blocksize != EXT4_MIN_BLOCK_SIZE) {
 		logical_sb_block = sb_block * EXT4_MIN_BLOCK_SIZE;
 		offset = do_div(logical_sb_block, blocksize);
-	} else {
+	} else {//1k大小的超级快不需要计算偏移量
 		logical_sb_block = sb_block;
 	}
-
+	
+	//从磁盘中读取逻辑超级块
 	if (!(bh = sb_bread_unmovable(sb, logical_sb_block))) {
 		ext4_msg(sb, KERN_ERR, "unable to read superblock");
 		goto out_fail;
@@ -3616,9 +3627,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	 * Note: s_es must be initialized as soon as possible because
 	 *       some ext4 macro-instructions depend on its value
 	 */
+	//初始化extent状态值，ext4指令需要它
 	es = (struct ext4_super_block *) (bh->b_data + offset);
 	sbi->s_es = es;
 	sb->s_magic = le16_to_cpu(es->s_magic);
+	
+	//如果不是ext4文件系统的魔数，说明文件系统格式不是ext4，返回错误
 	if (sb->s_magic != EXT4_SUPER_MAGIC)
 		goto cantfind_ext4;
 	sbi->s_kbytes_written = le64_to_cpu(es->s_kbytes_written);
@@ -3629,7 +3643,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		ext4_warning(sb, "metadata_csum and uninit_bg are "
 			     "redundant flags; please run fsck.");
 
-	/* Check for a known checksum algorithm */
+	/* 检查已知的校验和算法 */
 	if (!ext4_verify_csum_type(sb, es)) {
 		ext4_msg(sb, KERN_ERR, "VFS: Found ext4 filesystem with "
 			 "unknown checksum algorithm.");
@@ -3637,7 +3651,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		goto cantfind_ext4;
 	}
 
-	/* Load the checksum driver */
+	/* 加载校验驱动程序 */
 	sbi->s_chksum_driver = crypto_alloc_shash("crc32c", 0, 0);
 	if (IS_ERR(sbi->s_chksum_driver)) {
 		ext4_msg(sb, KERN_ERR, "Cannot load crc32c driver.");
@@ -3646,7 +3660,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		goto failed_mount;
 	}
 
-	/* Check superblock checksum */
+	/* 检查超块校验 */
 	if (!ext4_superblock_csum_verify(sb, es)) {
 		ext4_msg(sb, KERN_ERR, "VFS: Found ext4 filesystem with "
 			 "invalid superblock checksum.  Run e2fsck?");
@@ -3655,14 +3669,14 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		goto cantfind_ext4;
 	}
 
-	/* Precompute checksum seed for all metadata */
+	/* 预先计算所有元数据的校验和种子 */
 	if (ext4_has_feature_csum_seed(sb))
 		sbi->s_csum_seed = le32_to_cpu(es->s_checksum_seed);
 	else if (ext4_has_metadata_csum(sb) || ext4_has_feature_ea_inode(sb))
 		sbi->s_csum_seed = ext4_chksum(sbi, ~0, es->s_uuid,
 					       sizeof(es->s_uuid));
 
-	/* Set defaults before we parse the mount options */
+	/* 在解析挂载选项之前设置默认值   */
 	def_mount_opts = le32_to_cpu(es->s_default_mount_opts);
 	set_opt(sb, INIT_INODE_TABLE);
 	if (def_mount_opts & EXT4_DEFM_DEBUG)
@@ -3671,12 +3685,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		set_opt(sb, GRPID);
 	if (def_mount_opts & EXT4_DEFM_UID16)
 		set_opt(sb, NO_UID32);
-	/* xattr user namespace & acls are now defaulted on */
+	/* 默认打开Xattr用户名称空间和acl   */
 	set_opt(sb, XATTR_USER);
 #ifdef CONFIG_EXT4_FS_POSIX_ACL
 	set_opt(sb, POSIX_ACL);
 #endif
-	/* don't forget to enable journal_csum when metadata_csum is enabled. */
+	/* 当启用metadata_csum时，需要启用journal_csum   */
 	if (ext4_has_metadata_csum(sb))
 		set_opt(sb, JOURNAL_CHECKSUM);
 
@@ -3693,7 +3707,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		set_opt(sb, ERRORS_CONT);
 	else
 		set_opt(sb, ERRORS_RO);
-	/* block_validity enabled by default; disable with noblock_validity */
+	/* 默认启用Block_validity; 默认noblock_validity   */
 	set_opt(sb, BLOCK_VALIDITY);
 	if (def_mount_opts & EXT4_DEFM_DISCARD)
 		set_opt(sb, DISCARD);
@@ -3711,6 +3725,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	 * enable delayed allocation by default
 	 * Use -o nodelalloc to turn it off
 	 */
+	//如果使用了-o nodelalloc选项则关闭延迟分配  
 	if (!IS_EXT3_SB(sb) && !IS_EXT2_SB(sb) &&
 	    ((def_mount_opts & EXT4_DEFM_NODELALLOC) == 0))
 		set_opt(sb, DELALLOC);
@@ -3719,8 +3734,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	 * set default s_li_wait_mult for lazyinit, for the case there is
 	 * no mount option specified.
 	 */
+	//为lazyinit设置默认的s_li_wait_mult
 	sbi->s_li_wait_mult = EXT4_DEF_LI_WAIT_MULT;
 
+	//继续进行挂载选项的分析
 	if (sbi->s_es->s_mount_opts[0]) {
 		char *s_mount_opts = kstrndup(sbi->s_es->s_mount_opts,
 					      sizeof(sbi->s_es->s_mount_opts),
@@ -3735,11 +3752,14 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		}
 		kfree(s_mount_opts);
 	}
+	
+	//记录s_mount_opt
 	sbi->s_def_mount_opt = sbi->s_mount_opt;
 	if (!parse_options((char *) data, sb, &journal_devnum,
 			   &journal_ioprio, 0))
 		goto failed_mount;
 
+	//挂载选项分析
 	if (test_opt(sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA) {
 		printk_once(KERN_WARNING "EXT4-fs: Warning: mounting "
 			    "with data=journal disables delayed "
@@ -3793,6 +3813,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		 * ea_inode feature uses l_i_version field which is not
 		 * available in HURD_COMPAT mode.
 		 */
+		//ea_inode特性使用了HURD_COMPAT模式下不可用的l_i_version字段
 		if (ext4_has_feature_ea_inode(sb)) {
 			ext4_msg(sb, KERN_ERR,
 				 "ea_inode feature is not supported for Hurd");
@@ -3800,7 +3821,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		}
 	}
 
-	if (IS_EXT2_SB(sb)) {
+	if (IS_EXT2_SB(sb)) {//如果是ext2格式的超级快
 		if (ext2_feature_set_ok(sb))
 			ext4_msg(sb, KERN_INFO, "mounting ext2 file system "
 				 "using the ext4 subsystem");
@@ -3817,7 +3838,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		}
 	}
 
-	if (IS_EXT3_SB(sb)) {
+	if (IS_EXT3_SB(sb)) {//如果是ext3格式的超级快
 		if (ext3_feature_set_ok(sb))
 			ext4_msg(sb, KERN_INFO, "mounting ext3 file system "
 				 "using the ext4 subsystem");
@@ -3842,6 +3863,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	if (!ext4_feature_set_ok(sb, (sb_rdonly(sb))))
 		goto failed_mount;
 
+	//计算块大小
 	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
 	if (blocksize < EXT4_MIN_BLOCK_SIZE ||
 	    blocksize > EXT4_MAX_BLOCK_SIZE) {
@@ -3891,6 +3913,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		goto failed_mount;
 	}
 
+	//验证文件系统块大小
 	if (sb->s_blocksize != blocksize) {
 		/* Validate the filesystem blocksize */
 		if (!sb_set_blocksize(sb, blocksize)) {
@@ -3917,6 +3940,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		}
 	}
 
+	//判断是否存在大文件
 	has_huge_files = ext4_has_feature_huge_file(sb);
 	sbi->s_bitmap_maxbytes = ext4_max_bitmap_size(sb->s_blocksize_bits,
 						      has_huge_files);
@@ -3999,7 +4023,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		}
 	}
 
-	/* Handle clustersize */
+	/* 处理集群大小 */
 	clustersize = BLOCK_SIZE << le32_to_cpu(es->s_log_cluster_size);
 	has_bigalloc = ext4_has_feature_bigalloc(sb);
 	if (has_bigalloc) {
@@ -4045,7 +4069,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	}
 	sbi->s_cluster_ratio = clustersize / blocksize;
 
-	/* Do we have standard group size of clustersize * 8 blocks ? */
+	/* 判断簇大小是否是为 8块的标准组 的整数倍   */
 	if (sbi->s_blocks_per_group == clustersize << 3)
 		set_opt2(sb, STD_GROUP_SIZE);
 
@@ -4053,6 +4077,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	 * Test whether we have more sectors than will fit in sector_t,
 	 * and whether the max offset is addressable by the page cache.
 	 */
+	//测试我们是否有比sector_t所能容纳的更多的扇区，以及页面缓存是否可以寻址最大偏移量。
 	err = generic_check_addressable(sb->s_blocksize_bits,
 					ext4_blocks_count(es));
 	if (err) {
@@ -4066,7 +4091,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	if (EXT4_BLOCKS_PER_GROUP(sb) == 0)
 		goto cantfind_ext4;
 
-	/* check blocks count against device size */
+	/* 根据设备大小检查块计数 */
 	blocks_count = sb->s_bdev->bd_inode->i_size >> sb->s_blocksize_bits;
 	if (blocks_count && ext4_blocks_count(es) > blocks_count) {
 		ext4_msg(sb, KERN_WARNING, "bad geometry: block count %llu "
@@ -4079,6 +4104,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	 * It makes no sense for the first data block to be beyond the end
 	 * of the filesystem.
 	 */
+	//判断第一个数据块是否超出文件系统的末端
 	if (le32_to_cpu(es->s_first_data_block) >= ext4_blocks_count(es)) {
 		ext4_msg(sb, KERN_WARNING, "bad geometry: first data "
 			 "block %u is beyond end of filesystem (%llu)",
@@ -4093,6 +4119,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		goto failed_mount;
 	}
 
+	//计算块数量
 	blocks_count = (ext4_blocks_count(es) -
 			le32_to_cpu(es->s_first_data_block) +
 			EXT4_BLOCKS_PER_GROUP(sb) - 1);
@@ -4117,6 +4144,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		ret = -EINVAL;
 		goto failed_mount;
 	}
+	
+	//计算块组数量
 	db_count = (sbi->s_groups_count + EXT4_DESC_PER_BLOCK(sb) - 1) /
 		   EXT4_DESC_PER_BLOCK(sb);
 	if (ext4_has_feature_meta_bg(sb)) {
@@ -4128,6 +4157,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 			goto failed_mount;
 		}
 	}
+	
+	//分配块组描述符
 	sbi->s_group_desc = kvmalloc_array(db_count,
 					   sizeof(struct buffer_head *),
 					   GFP_KERNEL);
@@ -4139,7 +4170,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 	bgl_lock_init(sbi->s_blockgroup_lock);
 
-	/* Pre-read the descriptors into the buffer cache */
+	/* 将块组描述符预读到缓冲区缓存中   */
 	for (i = 0; i < db_count; i++) {
 		block = descriptor_loc(sb, logical_sb_block, i);
 		sb_breadahead(sb, block);
@@ -4155,6 +4186,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 			goto failed_mount2;
 		}
 	}
+	
+	//记录块组个数
 	sbi->s_gdb_count = db_count;
 	if (!ext4_check_descriptors(sb, logical_sb_block, &first_not_zeroed)) {
 		ext4_msg(sb, KERN_ERR, "group descriptors corrupted!");
@@ -4162,9 +4195,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		goto failed_mount2;
 	}
 
+	//初始化定时器
 	timer_setup(&sbi->s_err_report, print_daily_error_info, 0);
 
-	/* Register extent status tree shrinker */
+	/* 注册extent状态树收缩器 */
 	if (ext4_es_register_shrinker(sbi))
 		goto failed_mount3;
 
@@ -4172,7 +4206,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	sbi->s_extent_max_zeroout_kb = 32;
 
 	/*
-	 * set up enough so that it can read an inode
+	 * 设置ops，以便它能够读取inode
 	 */
 	sb->s_op = &ext4_sops;
 	sb->s_export_op = &ext4_export_ops;
@@ -4188,10 +4222,13 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		sb->s_qcop = &ext4_qctl_operations;
 	sb->s_quota_types = QTYPE_MASK_USR | QTYPE_MASK_GRP | QTYPE_MASK_PRJ;
 #endif
+
+	//记录uuid
 	memcpy(&sb->s_uuid, es->s_uuid, sizeof(es->s_uuid));
 
+	//初始化链表头，用来记录打开的文件
 	INIT_LIST_HEAD(&sbi->s_orphan); /* unlinked but open files */
-	mutex_init(&sbi->s_orphan_lock);
+	mutex_init(&sbi->s_orphan_lock);//初始化互斥锁
 
 	sb->s_root = NULL;
 
@@ -4206,6 +4243,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	 * The first inode we look at is the journal inode.  Don't try
 	 * root first: it may be modified in the journal!
 	 */
+	//日志节点处理
 	if (!test_opt(sb, NOLOAD) && ext4_has_feature_journal(sb)) {
 		err = ext4_load_journal(sb, es, journal_devnum);
 		if (err)
@@ -4247,6 +4285,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		goto no_journal;
 	}
 
+	//如果是64为日志则不支持
 	if (ext4_has_feature_64bit(sb) &&
 	    !jbd2_journal_set_features(EXT4_SB(sb)->s_journal, 0, 0,
 				       JBD2_FEATURE_INCOMPAT_64BIT)) {
@@ -4254,14 +4293,14 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		goto failed_mount_wq;
 	}
 
+	//设置日志有关校验
 	if (!set_journal_csum_feature_set(sb)) {
 		ext4_msg(sb, KERN_ERR, "Failed to set journal checksum "
 			 "feature set");
 		goto failed_mount_wq;
 	}
 
-	/* We have now updated the journal if required, so we can
-	 * validate the data journaling mode. */
+	/* 验证数据日志记录模式。   */
 	switch (test_opt(sb, DATA_FLAGS)) {
 	case 0:
 		/* No mode set, assume a default based on the journal
@@ -4299,6 +4338,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 	set_task_ioprio(sbi->s_journal->j_task, journal_ioprio);
 
+	//设置日志commit回调函数
 	sbi->s_journal->j_commit_callback = ext4_journal_commit_callback;
 
 no_journal:
@@ -4349,6 +4389,7 @@ no_journal:
 	 * The maximum number of concurrent works can be high and
 	 * concurrency isn't really necessary.  Limit it to 1.
 	 */
+	//如果有需要，可以限制并发队列数量为1
 	EXT4_SB(sb)->rsv_conversion_wq =
 		alloc_workqueue("ext4-rsv-conversion", WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
 	if (!EXT4_SB(sb)->rsv_conversion_wq) {
@@ -4362,6 +4403,7 @@ no_journal:
 	 * so we can safely mount the rest of the filesystem now.
 	 */
 
+	//挂载文件系统的其余部分，包括root  
 	root = ext4_iget(sb, EXT4_ROOT_INO, EXT4_IGET_SPECIAL);
 	if (IS_ERR(root)) {
 		ext4_msg(sb, KERN_ERR, "get root inode failed");
@@ -4381,6 +4423,7 @@ no_journal:
 		goto failed_mount4;
 	}
 
+	//设置超级快
 	ret = ext4_setup_super(sb, es, sb_rdonly(sb));
 	if (ret == -EROFS) {
 		sb->s_flags |= SB_RDONLY;
@@ -4388,7 +4431,7 @@ no_journal:
 	} else if (ret)
 		goto failed_mount4a;
 
-	/* determine the minimum size of new large inodes, if present */
+	/* 确定新的大型inode的最小大小 */
 	if (sbi->s_inode_size > EXT4_GOOD_OLD_INODE_SIZE &&
 	    sbi->s_want_extra_isize == 0) {
 		sbi->s_want_extra_isize = sizeof(struct ext4_inode) -
@@ -4404,7 +4447,7 @@ no_journal:
 					le16_to_cpu(es->s_min_extra_isize);
 		}
 	}
-	/* Check if enough inode space is available */
+	/* 检查是否有足够的inode空间可用 */
 	if (EXT4_GOOD_OLD_INODE_SIZE + sbi->s_want_extra_isize >
 							sbi->s_inode_size) {
 		sbi->s_want_extra_isize = sizeof(struct ext4_inode) -
@@ -4415,6 +4458,7 @@ no_journal:
 
 	ext4_set_resv_clusters(sb);
 
+	//设置ext4系统内存，存放entry入口
 	err = ext4_setup_system_zone(sb);
 	if (err) {
 		ext4_msg(sb, KERN_ERR, "failed to initialize system "
@@ -4422,18 +4466,19 @@ no_journal:
 		goto failed_mount4a;
 	}
 
-	ext4_ext_init(sb);
-	err = ext4_mb_init(sb);
+	ext4_ext_init(sb);//初始化ext4一些feature extents
+	err = ext4_mb_init(sb);//初始化存放文件内容的内存块
 	if (err) {
 		ext4_msg(sb, KERN_ERR, "failed to initialize mballoc (%d)",
 			 err);
 		goto failed_mount5;
 	}
 
+	//计算空闲块
 	block = ext4_count_free_clusters(sb);
 	ext4_free_blocks_count_set(sbi->s_es, 
 				   EXT4_C2B(sbi, block));
-	ext4_superblock_csum_set(sb);
+	ext4_superblock_csum_set(sb);//设置校验
 	err = percpu_counter_init(&sbi->s_freeclusters_counter, block,
 				  GFP_KERNEL);
 	if (!err) {
@@ -4457,6 +4502,7 @@ no_journal:
 		goto failed_mount6;
 	}
 
+	//如果支持flex_bg则填充flex_info
 	if (ext4_has_feature_flex_bg(sb))
 		if (!ext4_fill_flex_info(sb)) {
 			ext4_msg(sb, KERN_ERR,
@@ -4465,10 +4511,12 @@ no_journal:
 			goto failed_mount6;
 		}
 
+	//注册li_request
 	err = ext4_register_li_request(sb, first_not_zeroed);
 	if (err)
 		goto failed_mount6;
 
+	//注册sysfs
 	err = ext4_register_sysfs(sb);
 	if (err)
 		goto failed_mount7;
@@ -4482,6 +4530,7 @@ no_journal:
 	}
 #endif  /* CONFIG_QUOTA */
 
+	//初始化超级快参数
 	EXT4_SB(sb)->s_mount_state |= EXT4_ORPHAN_FS;
 	ext4_orphan_cleanup(sb, es);
 	EXT4_SB(sb)->s_mount_state &= ~EXT4_ORPHAN_FS;
@@ -4517,13 +4566,15 @@ no_journal:
 	if (es->s_error_count)
 		mod_timer(&sbi->s_err_report, jiffies + 300*HZ); /* 5 minutes */
 
-	/* Enable message ratelimiting. Default is 10 messages per 5 secs. */
+	/* ratelimiting启用消息。 默认值是每5秒10条消息   */
 	ratelimit_state_init(&sbi->s_err_ratelimit_state, 5 * HZ, 10);
 	ratelimit_state_init(&sbi->s_warning_ratelimit_state, 5 * HZ, 10);
 	ratelimit_state_init(&sbi->s_msg_ratelimit_state, 5 * HZ, 10);
 
-	kfree(orig_data);
+	kfree(orig_data);//释放挂载选项的内存
+	//成功返回
 	return 0;
+	//下面是失败的处理
 
 cantfind_ext4:
 	if (!silent)
@@ -5985,9 +6036,13 @@ static inline int ext3_feature_set_ok(struct super_block *sb)
 
 static struct file_system_type ext4_fs_type = {
 	.owner		= THIS_MODULE,
+	//文件系统名字
 	.name		= "ext4",
+	//文件系统挂载调用函数
 	.mount		= ext4_mount,
+	//文件系统解挂调用函数
 	.kill_sb	= kill_block_super,
+	//使用标志,表示文件系统在物理设备上
 	.fs_flags	= FS_REQUIRES_DEV,
 };
 MODULE_ALIAS_FS("ext4");
@@ -5999,41 +6054,41 @@ static int __init ext4_init_fs(void)
 {
 	int i, err;
 
-	ratelimit_state_init(&ext4_mount_msg_ratelimit, 30 * HZ, 64);
+	ratelimit_state_init(&ext4_mount_msg_ratelimit, 30 * HZ, 64);//初始化挂载信息
 	ext4_li_info = NULL;
-	mutex_init(&ext4_li_mtx);
+	mutex_init(&ext4_li_mtx);//初始化互斥锁
 
 	/* Build-time check for flags consistency */
-	ext4_check_flag_values();
+	ext4_check_flag_values();//检查标志的一致性
 
 	for (i = 0; i < EXT4_WQ_HASH_SZ; i++)
-		init_waitqueue_head(&ext4__ioend_wq[i]);
+		init_waitqueue_head(&ext4__ioend_wq[i]);//初始化多个等待队列
 
-	err = ext4_init_es();
+	err = ext4_init_es();//分配extent状态内存
 	if (err)
 		return err;
 
-	err = ext4_init_pageio();
+	err = ext4_init_pageio();//分配io页缓存空间
 	if (err)
 		goto out5;
 
-	err = ext4_init_system_zone();
+	err = ext4_init_system_zone();//分配ext4需要的系统空间，存放entry入口
 	if (err)
 		goto out4;
 
-	err = ext4_init_sysfs();
+	err = ext4_init_sysfs();//在/sys下创建kobject
 	if (err)
 		goto out3;
 
-	err = ext4_init_mballoc();
+	err = ext4_init_mballoc();//分配预配置内存，申请和释放用到的内存
 	if (err)
 		goto out2;
-	err = init_inodecache();
+	err = init_inodecache();//分配存放inode的内存
 	if (err)
 		goto out1;
-	register_as_ext3();
-	register_as_ext2();
-	err = register_filesystem(&ext4_fs_type);
+	register_as_ext3();//把ext3注册到系统中，因为ext4兼容ext3
+	register_as_ext2();//把ext2注册到系统中，因为ext4兼容ext2
+	err = register_filesystem(&ext4_fs_type);//把ext4注册到系统中
 	if (err)
 		goto out;
 

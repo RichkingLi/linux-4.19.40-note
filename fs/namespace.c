@@ -951,6 +951,7 @@ vfs_kern_mount(struct file_system_type *type, int flags, const char *name, void 
 	if (!type)
 		return ERR_PTR(-ENODEV);
 
+	//分配一个新的struct mount结构体，并初始化里面成员内容
 	mnt = alloc_vfsmnt(name);
 	if (!mnt)
 		return ERR_PTR(-ENOMEM);
@@ -958,6 +959,7 @@ vfs_kern_mount(struct file_system_type *type, int flags, const char *name, void 
 	if (flags & SB_KERNMOUNT)
 		mnt->mnt.mnt_flags = MNT_INTERNAL;
 
+	//调用具体文件系统的mount回调函数type->mount，继续挂载操作
 	root = mount_fs(type, flags, name, data);
 	if (IS_ERR(root)) {
 		mnt_free_id(mnt);
@@ -965,11 +967,14 @@ vfs_kern_mount(struct file_system_type *type, int flags, const char *name, void 
 		return ERR_CAST(root);
 	}
 
+	//配置struct mount结构体参数
 	mnt->mnt.mnt_root = root;
 	mnt->mnt.mnt_sb = root->d_sb;
 	mnt->mnt_mountpoint = mnt->mnt.mnt_root;
 	mnt->mnt_parent = mnt;
 	lock_mount_hash();
+	
+	//把挂载描述符添加到超级块的挂载实例链表中
 	list_add_tail(&mnt->mnt_instance, &root->d_sb->s_mounts);
 	unlock_mount_hash();
 	return &mnt->mnt;
@@ -2462,11 +2467,13 @@ static int do_new_mount(struct path *path, const char *fstype, int sb_flags,
 	if (!fstype)
 		return -EINVAL;
 
-	type = get_fs_type(fstype);
+	type = get_fs_type(fstype);//根据文件系统名字查找文件系统类型
 	if (!type)
 		return -ENODEV;
 
+	//主要准备好一个完整的mount结构
 	mnt = vfs_kern_mount(type, sb_flags, name, data);
+	//如果此文件系统还有子类型（多见于FUSE），设置子文件系统类型名
 	if (!IS_ERR(mnt) && (type->fs_flags & FS_HAS_SUBTYPE) &&
 	    !mnt->mnt_sb->s_subtype)
 		mnt = fs_set_subtype(mnt, fstype);
@@ -2475,11 +2482,13 @@ static int do_new_mount(struct path *path, const char *fstype, int sb_flags,
 	if (IS_ERR(mnt))
 		return PTR_ERR(mnt);
 
+	//判断mount结构体是否允许访问，主要处理命名空间的问题
 	if (mount_too_revealing(mnt, &mnt_flags)) {
 		mntput(mnt);
 		return -EPERM;
 	}
 
+	//确定父文件系统的挂载点，并且挂载上去
 	err = do_add_mount(real_mount(mnt), path, mnt_flags);
 	if (err)
 		mntput(mnt);
@@ -2729,17 +2738,19 @@ long do_mount(const char *dev_name, const char __user *dir_name,
 		flags &= ~MS_MGC_MSK;
 
 	/* Basic sanity checks */
+	//挂载选项参数的基本检查
 	if (data_page)
 		((char *)data_page)[PAGE_SIZE - 1] = 0;
 
 	if (flags & MS_NOUSER)
 		return -EINVAL;
 
-	/* ... and get the mountpoint */
+	//根据目录名称找到挂载点
 	retval = user_path(dir_name, &path);
 	if (retval)
 		return retval;
 
+	//安全相关的，我也不太懂
 	retval = security_sb_mount(dev_name, &path,
 				   type_page, flags, data_page);
 	if (!retval && !may_mount())
@@ -2749,11 +2760,11 @@ long do_mount(const char *dev_name, const char __user *dir_name,
 	if (retval)
 		goto dput_out;
 
-	/* Default to relatime unless overriden */
+	//默认为relatime
 	if (!(flags & MS_NOATIME))
 		mnt_flags |= MNT_RELATIME;
 
-	/* Separate the per-mountpoint flags */
+	/* 分隔每个挂载点标志 */
 	if (flags & MS_NOSUID)
 		mnt_flags |= MNT_NOSUID;
 	if (flags & MS_NODEV)
@@ -2769,7 +2780,7 @@ long do_mount(const char *dev_name, const char __user *dir_name,
 	if (flags & MS_RDONLY)
 		mnt_flags |= MNT_READONLY;
 
-	/* The default atime for remount is preservation */
+	/* 重新挂载的默认时间是保存时间 */
 	if ((flags & MS_REMOUNT) &&
 	    ((flags & (MS_NOATIME | MS_NODIRATIME | MS_RELATIME |
 		       MS_STRICTATIME)) == 0)) {
@@ -2777,6 +2788,7 @@ long do_mount(const char *dev_name, const char __user *dir_name,
 		mnt_flags |= path.mnt->mnt_flags & MNT_ATIME_MASK;
 	}
 
+	//设置超级块flags
 	sb_flags = flags & (SB_RDONLY |
 			    SB_SYNCHRONOUS |
 			    SB_MANDLOCK |
@@ -2786,16 +2798,17 @@ long do_mount(const char *dev_name, const char __user *dir_name,
 			    SB_LAZYTIME |
 			    SB_I_VERSION);
 
-	if (flags & MS_REMOUNT)
+	
+	if (flags & MS_REMOUNT)//如果是重新挂载
 		retval = do_remount(&path, flags, sb_flags, mnt_flags,
 				    data_page);
-	else if (flags & MS_BIND)
+	else if (flags & MS_BIND)//如果是绑定挂载
 		retval = do_loopback(&path, dev_name, flags & MS_REC);
-	else if (flags & (MS_SHARED | MS_PRIVATE | MS_SLAVE | MS_UNBINDABLE))
+	else if (flags & (MS_SHARED | MS_PRIVATE | MS_SLAVE | MS_UNBINDABLE))//如果修改挂载文件系统类型
 		retval = do_change_type(&path, flags);
-	else if (flags & MS_MOVE)
+	else if (flags & MS_MOVE)//如果是移动挂载路径
 		retval = do_move_mount(&path, dev_name);
-	else
+	else//平时用到的挂载操作
 		retval = do_new_mount(&path, type_page, sb_flags, mnt_flags,
 				      dev_name, data_page);
 dput_out:
@@ -2997,21 +3010,22 @@ int ksys_mount(char __user *dev_name, char __user *dir_name, char __user *type,
 	char *kernel_dev;
 	void *options;
 
-	kernel_type = copy_mount_string(type);
+	kernel_type = copy_mount_string(type);//复制用户态的type字符串
 	ret = PTR_ERR(kernel_type);
 	if (IS_ERR(kernel_type))
 		goto out_type;
 
-	kernel_dev = copy_mount_string(dev_name);
+	kernel_dev = copy_mount_string(dev_name);//复制用户态的dev_name字符串
 	ret = PTR_ERR(kernel_dev);
 	if (IS_ERR(kernel_dev))
 		goto out_dev;
 
-	options = copy_mount_options(data);
+	options = copy_mount_options(data);//复制用户态的data数据
 	ret = PTR_ERR(options);
 	if (IS_ERR(options))
 		goto out_data;
 
+	//真正挂载操作函数
 	ret = do_mount(kernel_dev, dir_name, kernel_type, flags, options);
 
 	kfree(options);
@@ -3376,17 +3390,19 @@ static bool mount_too_revealing(struct vfsmount *mnt, int *new_mnt_flags)
 	if (ns->user_ns == &init_user_ns)
 		return false;
 
-	/* Can this filesystem be too revealing? */
+	/* mount结构体如果不允许访问直接返回失败 */
 	s_iflags = mnt->mnt_sb->s_iflags;
 	if (!(s_iflags & SB_I_USERNS_VISIBLE))
 		return false;
 
+	//如果超级块忽略物理设备或者忽略可执行文件则直接返回ok
 	if ((s_iflags & required_iflags) != required_iflags) {
 		WARN_ONCE(1, "Expected s_iflags to contain 0x%lx\n",
 			  required_iflags);
 		return true;
 	}
-
+	
+	//判断mount结构体是否可以访问
 	return !mnt_already_visible(ns, mnt, new_mnt_flags);
 }
 

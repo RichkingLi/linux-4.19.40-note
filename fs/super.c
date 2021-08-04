@@ -499,7 +499,9 @@ struct super_block *sget_userns(struct file_system_type *type,
 		return ERR_PTR(-EPERM);
 retry:
 	spin_lock(&sb_lock);
+	
 	if (test) {
+		//遍历超级快，如果找到则返回超级快
 		hlist_for_each_entry(old, &type->fs_supers, s_instances) {
 			if (!test(old, data))
 				continue;
@@ -514,23 +516,28 @@ retry:
 			return old;
 		}
 	}
+	//找不到，下面创建一个超级块
 	if (!s) {
 		spin_unlock(&sb_lock);
+		//分配一个超级快并且初始化好
 		s = alloc_super(type, (flags & ~SB_SUBMOUNT), user_ns);
 		if (!s)
 			return ERR_PTR(-ENOMEM);
 		goto retry;
 	}
 
-	err = set(s, data);
+	err = set(s, data);//设置私有数据
 	if (err) {
 		spin_unlock(&sb_lock);
 		destroy_unused_super(s);
 		return ERR_PTR(err);
 	}
+	//设置超级快的参数
 	s->s_type = type;
 	strlcpy(s->s_id, type->name, sizeof(s->s_id));
+	//超级快加入到链表中
 	list_add_tail(&s->s_list, &super_blocks);
+	//把同一个文件系统类型的所有超级块实例链接在一起，链表的头节点是结构体file_system_type的成员fs_supers
 	hlist_add_head(&s->s_instances, &type->fs_supers);
 	spin_unlock(&sb_lock);
 	get_filesystem(type);
@@ -1113,6 +1120,7 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
 	if (!(flags & SB_RDONLY))
 		mode |= FMODE_WRITE;
 
+	//通过dev_name设备名分配对应的block_device结构
 	bdev = blkdev_get_by_path(dev_name, mode, fs_type);
 	if (IS_ERR(bdev))
 		return ERR_CAST(bdev);
@@ -1128,13 +1136,16 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
 		error = -EBUSY;
 		goto error_bdev;
 	}
+	
+	//得到已经存在或者新分配的super_block结构体
 	s = sget(fs_type, test_bdev_super, set_bdev_super, flags | SB_NOSEC,
 		 bdev);
 	mutex_unlock(&bdev->bd_fsfreeze_mutex);
 	if (IS_ERR(s))
 		goto error_s;
 
-	if (s->s_root) {
+	if (s->s_root) {//s->s_root不为空，说明得到的是已经存在的超级快
+		//判断此次的挂载flag是否和之前的挂载有读/写冲突，如果有冲突则返回错误
 		if ((flags ^ s->s_flags) & SB_RDONLY) {
 			deactivate_locked_super(s);
 			error = -EBUSY;
@@ -1149,18 +1160,22 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
 		 * holding an active reference.
 		 */
 		up_write(&s->s_umount);
+		
+		//因为已经有了之前存在的超级快，也就是block_dev之前也分配过了，所以这个新的bdev就可以释放了。
 		blkdev_put(bdev, mode);
 		down_write(&s->s_umount);
-	} else {
+	} else {//s->s_root为空，说明得到的是新的超级快
+		//设置新的超级快的mode, id, blocksize
 		s->s_mode = mode;
 		snprintf(s->s_id, sizeof(s->s_id), "%pg", bdev);
 		sb_set_blocksize(s, block_size(bdev));
+		//fill_super是一个传入参数，它由具体文件系统自己实现，ext4就实现了ext4_fill_super
 		error = fill_super(s, data, flags & SB_SILENT ? 1 : 0);
 		if (error) {
 			deactivate_locked_super(s);
 			goto error;
 		}
-
+		//最后设置s_flags和bd_super
 		s->s_flags |= SB_ACTIVE;
 		bdev->bd_super = s;
 	}
@@ -1248,6 +1263,7 @@ mount_fs(struct file_system_type *type, int flags, const char *name, void *data)
 	char *secdata = NULL;
 	int error = -ENOMEM;
 
+	//二进制的mount date需要copy过来
 	if (data && !(type->fs_flags & FS_BINARY_MOUNTDATA)) {
 		secdata = alloc_secdata();
 		if (!secdata)
@@ -1258,6 +1274,7 @@ mount_fs(struct file_system_type *type, int flags, const char *name, void *data)
 			goto out_free_secdata;
 	}
 
+	//回调file_system_type的mount函数
 	root = type->mount(type, flags, name, data);
 	if (IS_ERR(root)) {
 		error = PTR_ERR(root);
@@ -1273,9 +1290,10 @@ mount_fs(struct file_system_type *type, int flags, const char *name, void *data)
 	 * superblock structure contents that we just set up, not the SB_BORN
 	 * flag.
 	 */
-	smp_wmb();
+	smp_wmb();//smp写屏障
 	sb->s_flags |= SB_BORN;
 
+	//安全相关
 	error = security_sb_kern_mount(sb, flags, secdata);
 	if (error)
 		goto out_sb;
