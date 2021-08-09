@@ -665,12 +665,12 @@ typedef unsigned char *sk_buff_data_t;
 struct sk_buff {
 	union {
 		struct {
-			/* These two members must be first. */
-			struct sk_buff		*next;
+			/* skbuff结构体是双向链表，下面是前驱和后继 */
+			struct sk_buff		*next;//
 			struct sk_buff		*prev;
 
 			union {
-				struct net_device	*dev;
+				struct net_device	*dev;//收到报文的网络设备
 				/* Some protocols might use this space to store information,
 				 * while device pointer would be NULL.
 				 * UDP receive path is one user.
@@ -683,12 +683,12 @@ struct sk_buff {
 	};
 
 	union {
-		struct sock		*sk;
+		struct sock		*sk;//本网络所属的sock结构，此值仅在本机发出的报文中有效，从网络收到的报文此值为空
 		int			ip_defrag_offset;
 	};
 
 	union {
-		ktime_t		tstamp;
+		ktime_t		tstamp;//报文收到的时间戳
 		u64		skb_mstamp;
 	};
 	/*
@@ -697,7 +697,7 @@ struct sk_buff {
 	 * want to keep them across layers you have to do a skb_clone()
 	 * first. This is owned by whoever has the skb queued ATM.
 	 */
-	char			cb[48] __aligned(8);
+	char			cb[48] __aligned(8);//用于控制缓冲区
 
 	union {
 		struct {
@@ -716,10 +716,10 @@ struct sk_buff {
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 	struct nf_bridge_info	*nf_bridge;
 #endif
-	unsigned int		len,
-				data_len;
-	__u16			mac_len,
-				hdr_len;
+	unsigned int		len, 	/* 有效数据长度 */
+				data_len;		/* 数据长度 */
+	__u16			mac_len,	/* 连接层头部长度，指的是MAC地址长度，为6 */
+				hdr_len;		/* skb的可写头部长度，用于clone时，表示clone的skb头长度 */
 
 	/* Following fields are _not_ copied in __copy_skb_header()
 	 * Note that queue_mapping is here mostly to fill a hole.
@@ -841,21 +841,21 @@ struct sk_buff {
 	__u16			inner_mac_header;
 
 	__be16			protocol;
-	__u16			transport_header;
-	__u16			network_header;
-	__u16			mac_header;
+	__u16			transport_header;//指向传输层的头部，四层帧头结构体指针
+	__u16			network_header;	//指向网络层头部，三层IP结构体指针
+	__u16			mac_header;//指向链路层头部，二层结构体指针
 
 	/* private: */
 	__u32			headers_end[0];
 	/* public: */
 
 	/* These elements must be at the end, see alloc_skb() for details.  */
-	sk_buff_data_t		tail;
-	sk_buff_data_t		end;
-	unsigned char		*head,
-				*data;
-	unsigned int		truesize;
-	refcount_t		users;
+	sk_buff_data_t		tail;//数据的尾指针
+	sk_buff_data_t		end;//报文缓冲区的尾部
+	unsigned char		*head,//报文缓冲区的头部
+				*data;//数据头指针，表示实际数据
+	unsigned int		truesize;//报文缓冲区的大小
+	refcount_t		users;//skb被clone引用的次数，在内存申请和克隆时用到的参数
 };
 
 #ifdef __KERNEL__

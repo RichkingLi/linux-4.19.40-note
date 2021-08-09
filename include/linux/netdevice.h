@@ -1743,17 +1743,17 @@ enum netdev_priv_flags {
  */
 
 struct net_device {
-	char			name[IFNAMSIZ];
-	struct hlist_node	name_hlist;
-	struct dev_ifalias	__rcu *ifalias;
+	char			name[IFNAMSIZ];//接口名称
+	struct hlist_node	name_hlist;//设备名称散列链表的链表元素
+	struct dev_ifalias	__rcu *ifalias;//网络设备的别名，也是网络设备的接口索引值
 	/*
 	 *	I/O specific fields
 	 *	FIXME: Merge these and struct ifmap into one
 	 */
-	unsigned long		mem_end;
-	unsigned long		mem_start;
-	unsigned long		base_addr;
-	int			irq;
+	unsigned long		mem_end;//共享内存结束的位置
+	unsigned long		mem_start;//共享内存起始的位置
+	unsigned long		base_addr;//设备IO地址
+	int			irq;//设备IRQ编号
 
 	/*
 	 *	Some hardware also needs these fields (state,dev_list,
@@ -1761,25 +1761,25 @@ struct net_device {
 	 *	part of the usual set specified in Space.c.
 	 */
 
-	unsigned long		state;
+	unsigned long		state;//设备状态
 
-	struct list_head	dev_list;
-	struct list_head	napi_list;
-	struct list_head	unreg_list;
-	struct list_head	close_list;
-	struct list_head	ptype_all;
-	struct list_head	ptype_specific;
+	struct list_head	dev_list;//网路设备全局链表
+	struct list_head	napi_list;//用于轮询NAPI设备的链表
+	struct list_head	unreg_list;//注销设备时的列表项
+	struct list_head	close_list;//关闭设备时的列表项
+	struct list_head	ptype_all;//所有协议的特定于设备的数据包处理程序
+	struct list_head	ptype_specific;//特定于设备或者协议的数据包处理程序
 
 	struct {
 		struct list_head upper;
 		struct list_head lower;
-	} adj_list;
+	} adj_list;//直接连接的设备，如用于连接的从属设备
 
-	netdev_features_t	features;
-	netdev_features_t	hw_features;
-	netdev_features_t	wanted_features;
-	netdev_features_t	vlan_features;
-	netdev_features_t	hw_enc_features;
+	netdev_features_t	features;//当前活动的设备功能
+	netdev_features_t	hw_features;//用户可以更改的功能
+	netdev_features_t	wanted_features;//用户请求功能
+	netdev_features_t	vlan_features;//WLAN设备可继承功能掩码
+	netdev_features_t	hw_enc_features;//封装设备继承的特性掩码
 	netdev_features_t	mpls_features;
 	netdev_features_t	gso_partial_features;
 
@@ -1822,7 +1822,7 @@ struct net_device {
 
 	const struct header_ops *header_ops;
 
-	unsigned int		flags;
+	unsigned int		flags;//接口标志
 	unsigned int		priv_flags;
 
 	unsigned short		gflags;
@@ -1834,12 +1834,12 @@ struct net_device {
 	unsigned char		if_port;
 	unsigned char		dma;
 
-	unsigned int		mtu;
+	unsigned int		mtu;//网络设备接口的最大传输单元
 	unsigned int		min_mtu;
 	unsigned int		max_mtu;
-	unsigned short		type;
-	unsigned short		hard_header_len;
-	unsigned char		min_header_len;
+	unsigned short		type;//接口硬件类型
+	unsigned short		hard_header_len;//硬件接口头部最大长度
+	unsigned char		min_header_len;//硬件接口头部最小长度
 
 	unsigned short		needed_headroom;
 	unsigned short		needed_tailroom;
@@ -1853,7 +1853,7 @@ struct net_device {
 	unsigned short          dev_port;
 	spinlock_t		addr_list_lock;
 	unsigned char		name_assign_type;
-	bool			uc_promisc;
+	bool			uc_promisc;//网路设备接口的单播模式
 	struct netdev_hw_addr_list	uc;
 	struct netdev_hw_addr_list	mc;
 	struct netdev_hw_addr_list	dev_addrs;
@@ -1861,8 +1861,8 @@ struct net_device {
 #ifdef CONFIG_SYSFS
 	struct kset		*queues_kset;
 #endif
-	unsigned int		promiscuity;
-	unsigned int		allmulti;
+	unsigned int		promiscuity;//网路设备接口的混杂模式
+	unsigned int		allmulti;//网路设备接口的全组播模式
 
 
 	/* Protocol-specific pointers */
@@ -1879,11 +1879,11 @@ struct net_device {
 #if IS_ENABLED(CONFIG_IRDA) || IS_ENABLED(CONFIG_ATALK)
 	void 			*atalk_ptr;
 #endif
-	struct in_device __rcu	*ip_ptr;
+	struct in_device __rcu	*ip_ptr;//ipv4的ip地址
 #if IS_ENABLED(CONFIG_DECNET)
 	struct dn_dev __rcu     *dn_ptr;
 #endif
-	struct inet6_dev __rcu	*ip6_ptr;
+	struct inet6_dev __rcu	*ip6_ptr;//ipv6的ip地址
 #if IS_ENABLED(CONFIG_AX25)
 	void			*ax25_ptr;
 #endif
@@ -1897,7 +1897,7 @@ struct net_device {
  * Cache lines mostly used on receive path (including eth_type_trans())
  */
 	/* Interface address info used in eth_type_trans() */
-	unsigned char		*dev_addr;
+	unsigned char		*dev_addr;//网络设备接口的MAC地址
 
 	struct netdev_rx_queue	*_rx;
 	unsigned int		num_rx_queues;
@@ -1916,7 +1916,7 @@ struct net_device {
 	struct nf_hook_entries __rcu *nf_hooks_ingress;
 #endif
 
-	unsigned char		broadcast[MAX_ADDR_LEN];
+	unsigned char		broadcast[MAX_ADDR_LEN];//硬件多播地址
 #ifdef CONFIG_RFS_ACCEL
 	struct cpu_rmap		*rx_cpu_rmap;
 #endif
