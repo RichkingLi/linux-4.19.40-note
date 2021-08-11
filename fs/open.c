@@ -936,14 +936,16 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags *o
 	 * Clear out all open flags we don't know about so that we don't report
 	 * them in fcntl(F_GETFD) or similar interfaces.
 	 */
+	//清除所有我们不知道的打开标志,
 	flags &= VALID_OPEN_FLAGS;
 
+	//根据flags和mode记录op->mode
 	if (flags & (O_CREAT | __O_TMPFILE))
 		op->mode = (mode & S_IALLUGO) | S_IFREG;
 	else
 		op->mode = 0;
 
-	/* Must never be set by userspace */
+	/* 不能直接使用用户空间设置flags */
 	flags &= ~FMODE_NONOTIFY & ~O_CLOEXEC;
 
 	/*
@@ -952,6 +954,7 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags *o
 	 * always set instead of having to deal with possibly weird behaviour
 	 * for malicious applications setting only __O_SYNC.
 	 */
+	//如果设置了文件同步，那么目录也需要同步
 	if (flags & __O_SYNC)
 		flags |= O_DSYNC;
 
@@ -971,7 +974,7 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags *o
 
 	op->open_flag = flags;
 
-	/* O_TRUNC implies we need access checks for write permissions */
+	/* 对写权限进行访问检查 */
 	if (flags & O_TRUNC)
 		acc_mode |= MAY_WRITE;
 
@@ -1054,28 +1057,33 @@ EXPORT_SYMBOL(file_open_root);
 long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 {
 	struct open_flags op;
+
+	//根据标志位，填充op结构体
 	int fd = build_open_flags(flags, mode, &op);
 	struct filename *tmp;
 
 	if (fd)
 		return fd;
 
+	//把文件路径从用户空间缓冲区复制到内核空间
 	tmp = getname(filename);
 	if (IS_ERR(tmp))
 		return PTR_ERR(tmp);
 
+	//负责分配文件描述符
 	fd = get_unused_fd_flags(flags);
 	if (fd >= 0) {
+		//解析文件路径，得到文件的索引节点，创建文件结构体
 		struct file *f = do_filp_open(dfd, tmp, &op);
-		if (IS_ERR(f)) {
-			put_unused_fd(fd);
+		if (IS_ERR(f)) {//创建文件结构体失败
+			put_unused_fd(fd);//释放fd
 			fd = PTR_ERR(f);
-		} else {
-			fsnotify_open(f);
-			fd_install(fd, f);
+		} else {//创建文件结构体
+			fsnotify_open(f);//使进程可以使用notify监视文件系统的事件
+			fd_install(fd, f);//把刚刚创建的文件添加到进程的打开文件表中
 		}
 	}
-	putname(tmp);
+	putname(tmp);//释放存放文件路径的内存
 	return fd;
 }
 

@@ -1565,9 +1565,11 @@ static int lookup_fast(struct nameidata *nd,
 	 * of a false negative due to a concurrent rename, the caller is
 	 * going to fall back to non-racy lookup.
 	 */
+	//文件可能存在RCU锁，这表示可能有别的进程使用，则有可能被加载到 dcache 中
 	if (nd->flags & LOOKUP_RCU) {
 		unsigned seq;
 		bool negative;
+		//RCU方式搜索，只使用内存屏障作为防护手段
 		dentry = __d_lookup_rcu(parent, &nd->last, &seq);
 		if (unlikely(!dentry)) {
 			if (unlazy_walk(nd))
@@ -1579,8 +1581,11 @@ static int lookup_fast(struct nameidata *nd,
 		 * This sequence count validates that the inode matches
 		 * the dentry name information from lookup.
 		 */
+		//此序列计数验证inode是否与查找中的dentry名称信息相匹配
 		*inode = d_backing_inode(dentry);
 		negative = d_is_negative(dentry);
+		
+		//在子目录的read_seqcount_begin的内存屏障就足够，这里判断父目录和子目录的seq是否一致
 		if (unlikely(read_seqcount_retry(&dentry->d_seq, seq)))
 			return -ECHILD;
 
@@ -1595,6 +1600,7 @@ static int lookup_fast(struct nameidata *nd,
 			return -ECHILD;
 
 		*seqp = seq;
+		//找到的目录是否需要重新生效，需要就执行denter的对应函数
 		status = d_revalidate(dentry, nd->flags);
 		if (likely(status > 0)) {
 			/*
@@ -1613,10 +1619,12 @@ static int lookup_fast(struct nameidata *nd,
 		if (unlikely(status == -ECHILD))
 			/* we'd been told to redo it in non-rcu mode */
 			status = d_revalidate(dentry, nd->flags);
-	} else {
+	} else {//普通查找
+		//普通查找抵用函数__d_lookup
 		dentry = __d_lookup(parent, &nd->last);
 		if (unlikely(!dentry))
 			return 0;
+		//找到的目录是否需要重新生效，需要就执行denter的对应函数
 		status = d_revalidate(dentry, nd->flags);
 	}
 	if (unlikely(status <= 0)) {
@@ -1632,7 +1640,7 @@ static int lookup_fast(struct nameidata *nd,
 
 	path->mnt = mnt;
 	path->dentry = dentry;
-	err = follow_managed(path, nd);
+	err = follow_managed(path, nd);//dentry管理相关
 	if (likely(err > 0))
 		*inode = d_backing_inode(path->dentry);
 	return err;
@@ -1651,10 +1659,11 @@ static struct dentry *__lookup_slow(const struct qstr *name,
 	if (unlikely(IS_DEADDIR(inode)))
 		return ERR_PTR(-ENOENT);
 again:
+	//分配内存
 	dentry = d_alloc_parallel(dir, name, &wq);
 	if (IS_ERR(dentry))
 		return dentry;
-	if (unlikely(!d_in_lookup(dentry))) {
+	if (unlikely(!d_in_lookup(dentry))) {//普通查找方式成功（第二种方式）
 		if (!(flags & LOOKUP_NO_REVAL)) {
 			int error = d_revalidate(dentry, flags);
 			if (unlikely(error <= 0)) {
@@ -1667,7 +1676,8 @@ again:
 				dentry = ERR_PTR(error);
 			}
 		}
-	} else {
+	} else {//普通查找失败，需要进入硬件查找（第三种方式）
+		//调用文件系统的lookup函数
 		old = inode->i_op->lookup(inode, dentry, flags);
 		d_lookup_done(dentry);
 		if (unlikely(old)) {
@@ -1684,9 +1694,9 @@ static struct dentry *lookup_slow(const struct qstr *name,
 {
 	struct inode *inode = dir->d_inode;
 	struct dentry *res;
-	inode_lock_shared(inode);
+	inode_lock_shared(inode);//上锁
 	res = __lookup_slow(name, dir, flags);
-	inode_unlock_shared(inode);
+	inode_unlock_shared(inode);//解锁
 	return res;
 }
 
@@ -1798,22 +1808,25 @@ static int walk_component(struct nameidata *nd, int flags)
 	 * parent relationships.
 	 */
 	if (unlikely(nd->last_type != LAST_NORM)) {
+		//处理"."和".."文件名，成功则设置nd->path.dentry和nd->inode，如果父目录是挂载点找到挂载点目录再处理。
 		err = handle_dots(nd, nd->last_type);
 		if (!(flags & WALK_MORE) && nd->depth)
 			put_link(nd);
 		return err;
 	}
+	/*  快速的文件搜索：RCU  */
 	err = lookup_fast(nd, &path, &inode, &seq);
 	if (unlikely(err <= 0)) {
 		if (err < 0)
 			return err;
+		//慢速的搜索
 		path.dentry = lookup_slow(&nd->last, nd->path.dentry,
 					  nd->flags);
 		if (IS_ERR(path.dentry))
 			return PTR_ERR(path.dentry);
 
 		path.mnt = nd->path.mnt;
-		err = follow_managed(&path, nd);
+		err = follow_managed(&path, nd);//dentry管理相关
 		if (unlikely(err < 0))
 			return err;
 
@@ -2071,23 +2084,25 @@ static int link_path_walk(const char *name, struct nameidata *nd)
 
 	if (IS_ERR(name))
 		return PTR_ERR(name);
-	while (*name=='/')
+	while (*name=='/')//如果是/开头，这需要将其+到不是"/"为止
 		name++;
-	if (!*name)
+	if (!*name)//如果字符是无效值，则异常退出
 		return 0;
 
-	/* At this point we know we have a real path component. */
+	/* 到这里，我们可以开始搜寻循环 */
 	for(;;) {
 		u64 hash_len;
 		int type;
 
-		err = may_lookup(nd);
+		err = may_lookup(nd);//查询文件权限是否允许访问
 		if (err)
 			return err;
-
+		
+		//算出该文件名的哈希值，和文件名长度
 		hash_len = hash_name(nd->path.dentry, name);
 
 		type = LAST_NORM;
+		//判断文件名是否使用了"."或者".."，是则标明type
 		if (name[0] == '.') switch (hashlen_len(hash_len)) {
 			case 2:
 				if (name[1] == '.') {
@@ -2098,6 +2113,8 @@ static int link_path_walk(const char *name, struct nameidata *nd)
 			case 1:
 				type = LAST_DOT;
 		}
+		
+		//文件名没有"."或者".."，则是普通文件或目录，则查看是否有hash缓存表，有表示内存中存在缓存，没有直接退出
 		if (likely(type == LAST_NORM)) {
 			struct dentry *parent = nd->path.dentry;
 			nd->flags &= ~LOOKUP_JUMPED;
@@ -2122,29 +2139,31 @@ static int link_path_walk(const char *name, struct nameidata *nd)
 		 * If it wasn't NUL, we know it was '/'. Skip that
 		 * slash, and continue until no more slashes.
 		 */
+		//当有多个"/"时，则搜索时去掉
 		do {
 			name++;
 		} while (unlikely(*name == '/'));
 		if (unlikely(!*name)) {
 OK:
-			/* pathname body, done */
+			/* 深度为0则文件名字解析结束返回 */
 			if (!nd->depth)
 				return 0;
+			/* 字符串结束则文件名字解析结束返回 */
 			name = nd->stack[nd->depth - 1].name;
-			/* trailing symlink, done */
 			if (!name)
 				return 0;
-			/* last component of nested symlink */
+			/* 依据刚刚识别的类型，做不同的操作 */
 			err = walk_component(nd, WALK_FOLLOW);
 		} else {
-			/* not the last component */
+			/* 依据刚刚识别的类型，做不同的操作 */
 			err = walk_component(nd, WALK_FOLLOW | WALK_MORE);
 		}
 		if (err < 0)
 			return err;
-
+		
+		//下面是符号连接处理
 		if (err) {
-			const char *s = get_link(nd);
+			const char *s = get_link(nd);//根据符号链接获取文件名
 
 			if (IS_ERR(s))
 				return PTR_ERR(s);
@@ -2158,6 +2177,7 @@ OK:
 				continue;
 			}
 		}
+		//普通文件的搜索，搜索失败则返回错误
 		if (unlikely(!d_can_lookup(nd->path.dentry))) {
 			if (nd->flags & LOOKUP_RCU) {
 				if (unlazy_walk(nd))
@@ -2181,13 +2201,17 @@ static const char *path_init(struct nameidata *nd, unsigned flags)
 	nd->last_type = LAST_ROOT; /* if there are only slashes... */
 	nd->flags = flags | LOOKUP_JUMPED | LOOKUP_PARENT;
 	nd->depth = 0;
+	
+	//flags中表明是从根目录搜寻，
 	if (flags & LOOKUP_ROOT) {
 		struct dentry *root = nd->root.dentry;
 		struct inode *inode = root->d_inode;
+		//查看文件权限上是否允许
 		if (*s && unlikely(!d_can_lookup(root)))
 			return ERR_PTR(-ENOTDIR);
 		nd->path = nd->root;
 		nd->inode = inode;
+		//对nd、RCU和顺序锁进行初始化
 		if (flags & LOOKUP_RCU) {
 			nd->seq = __read_seqcount_begin(&nd->path.dentry->d_seq);
 			nd->root_seq = nd->seq;
@@ -2203,6 +2227,8 @@ static const char *path_init(struct nameidata *nd, unsigned flags)
 	nd->path.dentry = NULL;
 
 	nd->m_seq = read_seqbegin(&mount_lock);
+	
+	//通过字符的开头是"/"，也可以表示绝对路径，则也要做相关初始化
 	if (*s == '/') {
 		set_root(nd);
 		if (likely(!nd_jump_root(nd)))
@@ -2224,7 +2250,7 @@ static const char *path_init(struct nameidata *nd, unsigned flags)
 			nd->inode = nd->path.dentry->d_inode;
 		}
 		return s;
-	} else {
+	} else {//开头不是"/"，表示使用相对路径
 		/* Caller must check execute permissions on the starting path component */
 		struct fd f = fdget_raw(nd->dfd);
 		struct dentry *dentry;
@@ -2290,7 +2316,7 @@ static int handle_lookup_down(struct nameidata *nd)
 			return -ECHILD;
 	} else {
 		dget(path.dentry);
-		err = follow_managed(&path, nd);
+		err = follow_managed(&path, nd);//dentry管理相关
 		if (unlikely(err < 0))
 			return err;
 		inode = d_backing_inode(path.dentry);
@@ -3358,7 +3384,7 @@ static int do_last(struct nameidata *nd,
 		got_write = false;
 	}
 
-	error = follow_managed(&path, nd);
+	error = follow_managed(&path, nd);//dentry管理相关
 	if (unlikely(error < 0))
 		return error;
 
@@ -3524,18 +3550,23 @@ static struct file *path_openat(struct nameidata *nd,
 	if (IS_ERR(file))
 		return file;
 
+	//临时文件的打开使用do_tmpfile函数
 	if (unlikely(file->f_flags & __O_TMPFILE)) {
 		error = do_tmpfile(nd, flags, op, file);
+	//O_PATH表示仅仅获取fd，没有真正打开文件，则调用do_o_path
 	} else if (unlikely(file->f_flags & O_PATH)) {
-		error = do_o_path(nd, flags, file);
-	} else {
+		error = do_o_path(nd, flags, file);//
+	} else {//普通打开文件的做法
+		//初始化nd中的其他参数，通过开头是不是"/"和dfd是否是AT_FDCWD，识别是绝对路径还是相对路径，设置RCU
 		const char *s = path_init(nd, flags);
+		//link_path_walk：命名解析函数，针对路径循环搜索，直到找到最后一个不是目录的文件
+		//do_last：处理打开文件的最后操作
 		while (!(error = link_path_walk(s, nd)) &&
 			(error = do_last(nd, file, op)) > 0) {
 			nd->flags &= ~(LOOKUP_OPEN|LOOKUP_CREATE|LOOKUP_EXCL);
-			s = trailing_symlink(nd);
+			s = trailing_symlink(nd);//查看是否为链接文件，链接文件处理
 		}
-		terminate_walk(nd);
+		terminate_walk(nd);//查找完成操作，包括解RCU锁
 	}
 	if (likely(!error)) {
 		if (likely(file->f_mode & FMODE_OPENED))
@@ -3543,7 +3574,7 @@ static struct file *path_openat(struct nameidata *nd,
 		WARN_ON(1);
 		error = -EINVAL;
 	}
-	fput(file);
+	fput(file);//初始化一个任务，关闭的时候回调用到____fput
 	if (error == -EOPENSTALE) {
 		if (flags & LOOKUP_RCU)
 			error = -ECHILD;
@@ -3556,17 +3587,22 @@ static struct file *path_openat(struct nameidata *nd,
 struct file *do_filp_open(int dfd, struct filename *pathname,
 		const struct open_flags *op)
 {
-	struct nameidata nd;
+	struct nameidata nd;//用来解析函数传递参数
 	int flags = op->lookup_flags;
 	struct file *filp;
 
+	//分配内存，并且根据参数设置nd
 	set_nameidata(&nd, dfd, pathname);
+	
+	//LOOKUP_RCU说明使用RCU方式查找，
 	filp = path_openat(&nd, op, flags | LOOKUP_RCU);
+	//RCU方式查找不到便使用普通查找
 	if (unlikely(filp == ERR_PTR(-ECHILD)))
 		filp = path_openat(&nd, op, flags);
+	//如果还找不到就要使用LOOKUP_REVAL查找，
 	if (unlikely(filp == ERR_PTR(-ESTALE)))
 		filp = path_openat(&nd, op, flags | LOOKUP_REVAL);
-	restore_nameidata();
+	restore_nameidata();//
 	return filp;
 }
 

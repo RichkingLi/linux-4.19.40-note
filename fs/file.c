@@ -152,11 +152,12 @@ static int expand_fdtable(struct files_struct *files, unsigned int nr)
 	struct fdtable *new_fdt, *cur_fdt;
 
 	spin_unlock(&files->file_lock);
-	new_fdt = alloc_fdtable(nr);
+	new_fdt = alloc_fdtable(nr);//分配fdtable内存
 
 	/* make sure all __fd_install() have seen resize_in_progress
 	 * or have finished their rcu_read_lock_sched() section.
 	 */
+	//确保文件使用者不大于1
 	if (atomic_read(&files->count) > 1)
 		synchronize_sched();
 
@@ -167,14 +168,18 @@ static int expand_fdtable(struct files_struct *files, unsigned int nr)
 	 * extremely unlikely race - sysctl_nr_open decreased between the check in
 	 * caller and alloc_fdtable().  Cheaper to catch it here...
 	 */
+	//检查分配的空间nr是否足够
 	if (unlikely(new_fdt->max_fds <= nr)) {
 		__free_fdtable(new_fdt);
 		return -EMFILE;
 	}
 	cur_fdt = files_fdtable(files);
 	BUG_ON(nr < cur_fdt->max_fds);
+	//把旧的文件表的内容复制到新的文件表上
 	copy_fdtable(new_fdt, cur_fdt);
+	//文件的指针指向新表
 	rcu_assign_pointer(files->fdt, new_fdt);
+	//释放旧的文件表
 	if (cur_fdt != &files->fdtab)
 		call_rcu(&cur_fdt->rcu, free_fdtable_rcu);
 	/* coupled with smp_rmb() in __fd_install() */
@@ -200,14 +205,15 @@ static int expand_files(struct files_struct *files, unsigned int nr)
 repeat:
 	fdt = files_fdtable(files);
 
-	/* Do we need to expand? */
+	/* 判断是否需要扩展，如果不需要，这里返回0，只有这里会返回0 */
 	if (nr < fdt->max_fds)
 		return expanded;
 
-	/* Can we expand? */
+	/* 判断能不能扩展 */
 	if (nr >= sysctl_nr_open)
 		return -EMFILE;
 
+	//根据resize_in_progress参数判断是否回到repeat
 	if (unlikely(files->resize_in_progress)) {
 		spin_unlock(&files->file_lock);
 		expanded = 1;
@@ -216,7 +222,7 @@ repeat:
 		goto repeat;
 	}
 
-	/* All good, so we try */
+	/* 开始扩展 */
 	files->resize_in_progress = true;
 	expanded = expand_fdtable(files, nr);
 	files->resize_in_progress = false;
@@ -484,24 +490,28 @@ int __alloc_fd(struct files_struct *files,
 	int error;
 	struct fdtable *fdt;
 
-	spin_lock(&files->file_lock);
+	spin_lock(&files->file_lock);//文件上锁
 repeat:
+	//一个宏，获取文件描述符位图
 	fdt = files_fdtable(files);
 	fd = start;
 	if (fd < files->next_fd)
-		fd = files->next_fd;
+		fd = files->next_fd;//获取next_fd，也就是上次分配的fd加上一
 
+	//如果fd比fd表小
 	if (fd < fdt->max_fds)
-		fd = find_next_fd(fdt, fd);
+		fd = find_next_fd(fdt, fd);//在文件描述符位图中查找一个空闲的fd
 
 	/*
 	 * N.B. For clone tasks sharing a files structure, this test
 	 * will limit the total number of files that can be opened.
 	 */
 	error = -EMFILE;
+	//如果fd大于进程打开文件数量上限
 	if (fd >= end)
 		goto out;
 
+	//到这里表示fd是ok的，需要扩大打开文件表
 	error = expand_files(files, fd);
 	if (error < 0)
 		goto out;
@@ -510,20 +520,26 @@ repeat:
 	 * If we needed to expand the fs array we
 	 * might have blocked - try again.
 	 */
+	//上面返回值小于0说明扩展失败
+	//这里返回值等于0说明啥也没做，需要再试一次
 	if (error)
 		goto repeat;
 
+	//记录下一次分配文件描述符的开始尝试位置
 	if (start <= files->next_fd)
 		files->next_fd = fd + 1;
-
+	
+	//在文件描述位图中记录fd已经分配
 	__set_open_fd(fd, fdt);
+	
+	//如果进程设置了O_CLOEXEC，表示使用系统调用execve装在程序的时候关闭文件
 	if (flags & O_CLOEXEC)
-		__set_close_on_exec(fd, fdt);
+		__set_close_on_exec(fd, fdt);//在位图中设置fd对应的位
 	else
-		__clear_close_on_exec(fd, fdt);
+		__clear_close_on_exec(fd, fdt);//在位图中清除fd对应的位
 	error = fd;
 #if 1
-	/* Sanity check */
+	/* 合理性检查 */
 	if (rcu_access_pointer(fdt->fd[fd]) != NULL) {
 		printk(KERN_WARNING "alloc_fd: slot %d not NULL!\n", fd);
 		rcu_assign_pointer(fdt->fd[fd], NULL);
