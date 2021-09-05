@@ -3297,6 +3297,7 @@ static int do_last(struct nameidata *nd,
 	nd->flags |= op->intent;
 
 	if (nd->last_type != LAST_NORM) {
+		//处理"."和".."文件名，成功则设置nd->path.dentry和nd->inode，如果父目录是挂载点找到挂载点目录再处理。
 		error = handle_dots(nd, nd->last_type);
 		if (unlikely(error))
 			return error;
@@ -3307,6 +3308,7 @@ static int do_last(struct nameidata *nd,
 		if (nd->last.name[nd->last.len])
 			nd->flags |= LOOKUP_FOLLOW | LOOKUP_DIRECTORY;
 		/* we _can_ be in RCU mode here */
+		/*  快速的文件搜索：RCU  */
 		error = lookup_fast(nd, &path, &inode, &seq);
 		if (likely(error > 0))
 			goto finish_lookup;
@@ -3323,6 +3325,7 @@ static int do_last(struct nameidata *nd,
 		 * has been cleared when we got to the last component we are
 		 * about to look up
 		 */
+		//成功完成路径获取
 		error = complete_walk(nd);
 		if (error)
 			return error;
@@ -3396,6 +3399,7 @@ static int do_last(struct nameidata *nd,
 	/*
 	 * create/update audit record if it already exists.
 	 */
+	//文件审计功能相关
 	audit_inode(nd->name, path.dentry, 0);
 
 	if (unlikely((open_flag & (O_EXCL | O_CREAT)) == (O_EXCL | O_CREAT))) {

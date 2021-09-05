@@ -1149,7 +1149,9 @@ int filp_close(struct file *filp, fl_owner_t id)
 		printk(KERN_ERR "VFS: Close: file count is 0\n");
 		return 0;
 	}
-
+	
+	//调用file的flush函数，如果是字符驱动就调用字符驱动的函数，
+	//如果是普通文件就根据文件系统类型调用其flush函数
 	if (filp->f_op->flush)
 		retval = filp->f_op->flush(filp, id);
 
@@ -1157,7 +1159,7 @@ int filp_close(struct file *filp, fl_owner_t id)
 		dnotify_flush(filp, id);
 		locks_remove_posix(filp, id);
 	}
-	fput(filp);
+	fput(filp);//回调释放filp实例
 	return retval;
 }
 

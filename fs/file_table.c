@@ -261,26 +261,31 @@ static void __fput(struct file *file)
 
 	might_sleep();
 
-	fsnotify_close(file);
+	fsnotify_close(file);//通知关闭文件事件，进程可以使用inotify监视文件的事件
 	/*
 	 * The function eventpoll_release() should be the first called
 	 * in the file cleanup chain.
 	 */
+	//如果进程使用eventpoll监听文件系统的事件，那么把文件从eventpoll中删除
 	eventpoll_release(file);
-	locks_remove_file(file);
+	locks_remove_file(file);//如果进程持有文件锁，那么释放文件锁
 
 	ima_file_free(file);
 	if (unlikely(file->f_flags & FASYNC)) {
 		if (file->f_op->fasync)
 			file->f_op->fasync(-1, file, 0);
 	}
+	
+	//调用具体文件系统类型的release函数
 	if (file->f_op->release)
 		file->f_op->release(inode, file);
 	if (unlikely(S_ISCHR(inode->i_mode) && inode->i_cdev != NULL &&
 		     !(file->f_mode & FMODE_PATH))) {
 		cdev_put(inode->i_cdev);
 	}
-	fops_put(file->f_op);
+	fops_put(file->f_op);//把文件操作结合结构体引用计数减一
+	
+	//解除file实例和目录项，挂载描述符以及索引节点的关联
 	put_pid(file->f_owner.pid);
 	if ((file->f_mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)
 		i_readcount_dec(inode);
@@ -288,8 +293,8 @@ static void __fput(struct file *file)
 		put_write_access(inode);
 		__mnt_drop_write(mnt);
 	}
-	dput(dentry);
-	mntput(mnt);
+	dput(dentry);//释放目录项
+	mntput(mnt);//释放挂载描述符
 out:
 	file_free(file);
 }
@@ -332,6 +337,7 @@ void fput(struct file *file)
 		struct task_struct *task = current;
 
 		if (likely(!in_interrupt() && !(task->flags & PF_KTHREAD))) {
+			//初始化一个work
 			init_task_work(&file->f_u.fu_rcuhead, ____fput);
 			if (!task_work_add(task, &file->f_u.fu_rcuhead, true))
 				return;

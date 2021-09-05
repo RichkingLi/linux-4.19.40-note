@@ -252,6 +252,7 @@ static inline void __set_open_fd(unsigned int fd, struct fdtable *fdt)
 
 static inline void __clear_open_fd(unsigned int fd, struct fdtable *fdt)
 {
+	//要关闭一个fd，需要清理两个bitmap。分别是open_fds和full_fds_bits
 	__clear_bit(fd, fdt->open_fds);
 	__clear_bit(fd / BITS_PER_LONG, fdt->full_fds_bits);
 }
@@ -562,10 +563,14 @@ int get_unused_fd_flags(unsigned flags)
 }
 EXPORT_SYMBOL(get_unused_fd_flags);
 
-static void __put_unused_fd(struct files_struct *files, unsigned int fd)
+static void __put_unused_fd__put_unused_fd(struct files_struct *files, unsigned int fd)
 {
+	//获取文件描述符位图
 	struct fdtable *fdt = files_fdtable(files);
+	//清理fd对应的文件位图
 	__clear_open_fd(fd, fdt);
+	
+	//如果fd小于next_fd，则将fd赋值给next_fd
 	if (fd < files->next_fd)
 		files->next_fd = fd;
 }
@@ -605,7 +610,7 @@ void __fd_install(struct files_struct *files, unsigned int fd,
 {
 	struct fdtable *fdt;
 
-	rcu_read_lock_sched();
+	rcu_read_lock_sched();//rcu读锁上锁
 
 	if (unlikely(files->resize_in_progress)) {
 		rcu_read_unlock_sched();
@@ -620,8 +625,10 @@ void __fd_install(struct files_struct *files, unsigned int fd,
 	smp_rmb();
 	fdt = rcu_dereference_sched(files->fdt);
 	BUG_ON(fdt->fd[fd] != NULL);
+	
+	//把fd加入到rcu中，会在close中移出
 	rcu_assign_pointer(fdt->fd[fd], file);
-	rcu_read_unlock_sched();
+	rcu_read_unlock_sched();//rcu读锁解锁
 }
 
 void fd_install(unsigned int fd, struct file *file)
@@ -639,17 +646,23 @@ int __close_fd(struct files_struct *files, unsigned fd)
 	struct file *file;
 	struct fdtable *fdt;
 
-	spin_lock(&files->file_lock);
+	spin_lock(&files->file_lock);//上锁
+	
+	//获取文件描述符位图
 	fdt = files_fdtable(files);
 	if (fd >= fdt->max_fds)
 		goto out_unlock;
-	file = fdt->fd[fd];
+	file = fdt->fd[fd];//获取文件file结构体
 	if (!file)
 		goto out_unlock;
+	
+	//让fd指向空，就是把fs移出rcu
 	rcu_assign_pointer(fdt->fd[fd], NULL);
+	
+	//清理fd对应的文件位图
 	__put_unused_fd(files, fd);
 	spin_unlock(&files->file_lock);
-	return filp_close(file, files);
+	return filp_close(file, files);//关闭文件
 
 out_unlock:
 	spin_unlock(&files->file_lock);
