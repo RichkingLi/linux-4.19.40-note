@@ -541,11 +541,15 @@ static inline struct task_struct *this_cpu_ksoftirqd(void)
 
 struct tasklet_struct
 {
-	struct tasklet_struct *next;
+	struct tasklet_struct *next;//指针，用于建立tasklet_struct实例的链表，允许多个任务在排队
+	
+	//表示任务当前的状态,一共有两种状态：
+	//TASKLET_STATE_SCHED：表示等待调度，注册tasklet的时候会初始化为该状态
+	//TASKLET_STATE_RUN：表示tasklet当前正在执行
 	unsigned long state;
-	atomic_t count;
-	void (*func)(unsigned long);
-	unsigned long data;
+	atomic_t count;//原子锁计数器，用于同步tasklet_struct的修改
+	void (*func)(unsigned long);//最重要的成员：回调函数
+	unsigned long data;//回调函数的执行参数
 };
 
 #define DECLARE_TASKLET(name, func, data) \
@@ -587,6 +591,7 @@ extern void __tasklet_schedule(struct tasklet_struct *t);
 
 static inline void tasklet_schedule(struct tasklet_struct *t)
 {
+	//设置tasklet的状态为TASKLET_STATE_SCHED，使用__tasklet_schedule进行调度
 	if (!test_and_set_bit(TASKLET_STATE_SCHED, &t->state))
 		__tasklet_schedule(t);
 }

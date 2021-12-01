@@ -421,7 +421,7 @@ void irq_exit(void)
  */
 inline void raise_softirq_irqoff(unsigned int nr)
 {
-	__raise_softirq_irqoff(nr);
+	__raise_softirq_irqoff(nr);//将irq_stat.__softirq_pending的对应软中断bit位置1
 
 	/*
 	 * If we're in an interrupt or softirq, we're done
@@ -432,7 +432,7 @@ inline void raise_softirq_irqoff(unsigned int nr)
 	 * Otherwise we wake up ksoftirqd to make sure we
 	 * schedule the softirq soon.
 	 */
-	if (!in_interrupt())
+	if (!in_interrupt())//如果处于中断上下文，那么不做任何处理，因为当前中断结束之后会处理pending的softirq
 		wakeup_softirqd();
 }
 
@@ -474,13 +474,13 @@ static void __tasklet_schedule_common(struct tasklet_struct *t,
 	struct tasklet_head *head;
 	unsigned long flags;
 
-	local_irq_save(flags);
-	head = this_cpu_ptr(headp);
-	t->next = NULL;
-	*head->tail = t;
-	head->tail = &(t->next);
-	raise_softirq_irqoff(softirq_nr);
-	local_irq_restore(flags);
+	local_irq_save(flags);//保存中断状态寄存器并且关闭本地cpu中断
+	head = this_cpu_ptr(headp);//获取per cpu变量的线性地址
+	t->next = NULL;//初始化tasklet_struct的next指针
+	*head->tail = t;//把tasklet_struct放到cpu调度链表中
+	head->tail = &(t->next);//设置head->tail的地址，用于存放下一个tasklet_struct
+	raise_softirq_irqoff(softirq_nr);//唤醒第softirq_nr个softirq准备执行
+	local_irq_restore(flags);//恢复中断状态寄存器
 }
 
 void __tasklet_schedule(struct tasklet_struct *t)
@@ -503,37 +503,44 @@ static void tasklet_action_common(struct softirq_action *a,
 {
 	struct tasklet_struct *list;
 
-	local_irq_disable();
-	list = tl_head->head;
-	tl_head->head = NULL;
-	tl_head->tail = &tl_head->head;
-	local_irq_enable();
+	
+	local_irq_disable();//关闭本地中断，禁止内核抢占
+	list = tl_head->head;//记录tasklet_head指针
+	tl_head->head = NULL;//赋值head，让链表为空
+	tl_head->tail = &tl_head->head;//赋值tail，让链表为空
+	local_irq_enable();//开启中断
 
+	//遍历tasklet链表，让链表上挂入的函数全部执行完成
 	while (list) {
+		//从链表上摘下每一个tasklet_struct结构体
 		struct tasklet_struct *t = list;
 
 		list = list->next;
 
+		//根据tasklet_struct的state成员，判断是否RUNING
 		if (tasklet_trylock(t)) {
-			if (!atomic_read(&t->count)) {
+			if (!atomic_read(&t->count)) {//如果原子锁计数器为0，则可以执行
+				//执行前需要先改变state为RUNING
 				if (!test_and_clear_bit(TASKLET_STATE_SCHED,
 							&t->state))
 					BUG();
-				t->func(t->data);
-				tasklet_unlock(t);
+				t->func(t->data);//真正运行user注册的tasklet函数的地方
+				tasklet_unlock(t);//运行完毕，清除RUNING状态
 				continue;
 			}
-			tasklet_unlock(t);
+			tasklet_unlock(t);//如果原子锁计数器不为0，清除RUNING状态
 		}
 
-		local_irq_disable();
+		local_irq_disable();//关闭本地cpu中断
+		//把以上没有处理完的tasklet重新挂到tasklt_vec数组中对应的cpu上的链表
 		t->next = NULL;
 		*tl_head->tail = t;
 		tl_head->tail = &t->next;
-		__raise_softirq_irqoff(softirq_nr);
-		local_irq_enable();
+		__raise_softirq_irqoff(softirq_nr);//把本地CPU的TASKLET_SOFTIRQ标记挂起
+		local_irq_enable();//使能中断
 	}
 }
+
 
 static __latent_entropy void tasklet_action(struct softirq_action *a)
 {
@@ -548,6 +555,7 @@ static __latent_entropy void tasklet_hi_action(struct softirq_action *a)
 void tasklet_init(struct tasklet_struct *t,
 		  void (*func)(unsigned long), unsigned long data)
 {
+	//初始化tasklet_struct结构体成员
 	t->next = NULL;
 	t->state = 0;
 	atomic_set(&t->count, 0);
@@ -558,15 +566,18 @@ EXPORT_SYMBOL(tasklet_init);
 
 void tasklet_kill(struct tasklet_struct *t)
 {
+	//如果在中断状态，则提醒一下
 	if (in_interrupt())
 		pr_notice("Attempt to kill tasklet from interrupt\n");
 
+	//等待调度完毕
 	while (test_and_set_bit(TASKLET_STATE_SCHED, &t->state)) {
 		do {
-			yield();
+			yield();//让出cpu
 		} while (test_bit(TASKLET_STATE_SCHED, &t->state));
 	}
-	tasklet_unlock_wait(t);
+	tasklet_unlock_wait(t);//等待解锁
+	//清除tasklet_struct的状态
 	clear_bit(TASKLET_STATE_SCHED, &t->state);
 }
 EXPORT_SYMBOL(tasklet_kill);
@@ -625,7 +636,8 @@ EXPORT_SYMBOL_GPL(tasklet_hrtimer_init);
 void __init softirq_init(void)
 {
 	int cpu;
-
+	
+	//初始化每个cpu的tasklet_vec链表
 	for_each_possible_cpu(cpu) {
 		per_cpu(tasklet_vec, cpu).tail =
 			&per_cpu(tasklet_vec, cpu).head;
@@ -633,7 +645,9 @@ void __init softirq_init(void)
 			&per_cpu(tasklet_hi_vec, cpu).head;
 	}
 
+	//打开TASKLET_SOFTIRQ的软中断
 	open_softirq(TASKLET_SOFTIRQ, tasklet_action);
+	//打开HI_SOFTIRQ的软中断
 	open_softirq(HI_SOFTIRQ, tasklet_hi_action);
 }
 
