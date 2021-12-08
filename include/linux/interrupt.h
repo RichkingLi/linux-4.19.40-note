@@ -460,22 +460,22 @@ extern bool force_irqthreads;
    al. should be converted to tasklets, not to softirqs.
  */
 
+//软中断的类型：软中断的编号形成的优先级顺序，编号越小优先级越高
 enum
 {
-	HI_SOFTIRQ=0,
-	TIMER_SOFTIRQ,
-	NET_TX_SOFTIRQ,
-	NET_RX_SOFTIRQ,
-	BLOCK_SOFTIRQ,
-	IRQ_POLL_SOFTIRQ,
-	TASKLET_SOFTIRQ,
-	SCHED_SOFTIRQ,
-	HRTIMER_SOFTIRQ, /* Unused, but kept as tools rely on the
-			    numbering. Sigh! */
-	RCU_SOFTIRQ,    /* Preferable RCU should always be the last softirq */
+	HI_SOFTIRQ=0,	//高优先级的小任务
+	TIMER_SOFTIRQ,	//定时器软中断
+	NET_TX_SOFTIRQ,	//网络协议栈发送报文的软中断
+	NET_RX_SOFTIRQ,	//网络协议栈接受报文的软中断
+	BLOCK_SOFTIRQ,	//块设备软中断
+	IRQ_POLL_SOFTIRQ,	//轮询软中断
+	TASKLET_SOFTIRQ,//低优先级的小任务
+	SCHED_SOFTIRQ,	//调度软中断，用于处理器之间的负载均衡
+	HRTIMER_SOFTIRQ,//高精度定时器软中断
+	RCU_SOFTIRQ,	//RCU软中断
 
-	NR_SOFTIRQS
 };
+
 
 #define SOFTIRQ_STOP_IDLE_MASK (~(1 << RCU_SOFTIRQ))
 
