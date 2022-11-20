@@ -24,35 +24,35 @@ struct worker_pool;
 struct worker {
 	/* on idle list while idle, on busy hash table while busy */
 	union {
-		struct list_head	entry;	/* L: while idle */
-		struct hlist_node	hentry;	/* L: while busy */
+		struct list_head	entry;//工人空闲的时候挂在空闲链表
+		struct hlist_node	hentry;//工人忙的时候呀挂在hash链表
 	};
 
-	struct work_struct	*current_work;	/* L: work being processed */
-	work_func_t		current_func;	/* L: current_work's fn */
-	struct pool_workqueue	*current_pwq; /* L: current_work's pwq */
-	struct list_head	scheduled;	/* L: scheduled works */
+	struct work_struct	*current_work;//工人当前进行的任务
+	work_func_t		current_func;//工人当前任务的函数
+	struct pool_workqueue	*current_pwq;//工人所在的pwq
+	struct list_head	scheduled;//工人预计安排的任务
 
 	/* 64 bytes boundary on 64bit, 32 on 32bit */
 
-	struct task_struct	*task;		/* I: worker task */
-	struct worker_pool	*pool;		/* A: the associated pool */
+	struct task_struct	*task;//记录工人的进程task_struct
+	struct worker_pool	*pool;//工人所在的工作池
 						/* L: for rescuers */
-	struct list_head	node;		/* A: anchored at pool->workers */
+	struct list_head	node;//工人所在的内存节点
 						/* A: runs through worker->node */
 
 	unsigned long		last_active;	/* L: last active timestamp */
-	unsigned int		flags;		/* X: flags */
-	int			id;		/* I: worker id */
+	unsigned int		flags;//属性
+	int			id;//工人的ID
 
 	/*
 	 * Opaque string set with work_set_desc().  Printed out with task
 	 * dump for debugging - WARN, BUG, panic or sysrq.
 	 */
-	char			desc[WORKER_DESC_LEN];
+	char			desc[WORKER_DESC_LEN];//工人的描述字符串
 
 	/* used only by rescuers to point to the target workqueue */
-	struct workqueue_struct	*rescue_wq;	/* I: the workqueue to rescue */
+	struct workqueue_struct	*rescue_wq;//救援的工作队列
 };
 
 /**
