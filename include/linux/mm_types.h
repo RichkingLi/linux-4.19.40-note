@@ -172,7 +172,7 @@ struct page {
 		 * If the page can be mapped to userspace, encodes the number
 		 * of times this page is referenced by a page table.
 		 */
-		atomic_t _mapcount;
+		atomic_t _mapcount;//内存管理子系统中映射的页表项计数，用于表示页是否已经映射
 
 		/*
 		 * If the page is neither PageSlab nor mappable to userspace,

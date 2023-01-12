@@ -291,9 +291,9 @@ void __init setup_arch(char **cmdline_p)
 	early_fixmap_init();
 	early_ioremap_init();
 
-	setup_machine_fdt(__fdt_pointer);
+	setup_machine_fdt(__fdt_pointer);//解析设备树的内存信息
 
-	parse_early_param();
+	parse_early_param();//
 
 	/*
 	 * Unmask asynchronous aborts and fiq after bringing up possible
@@ -312,7 +312,7 @@ void __init setup_arch(char **cmdline_p)
 	efi_init();
 	arm64_memblock_init();//arm64的引导内存分配器的初始化
 
-	paging_init();
+	paging_init();// 初始化内核页表并启用内存分页
 
 	acpi_table_upgrade();
 
@@ -322,7 +322,7 @@ void __init setup_arch(char **cmdline_p)
 	if (acpi_disabled)
 		unflatten_device_tree();
 
-	bootmem_init();
+	bootmem_init();//
 
 	kasan_init();
 

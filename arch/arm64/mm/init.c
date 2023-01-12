@@ -516,7 +516,7 @@ void __init bootmem_init(void)
 	arm64_memory_present();
 
 	sparse_init();
-	zone_sizes_init(min, max);
+	zone_sizes_init(min, max);//初始化系统中所有结点的 pgdat_t 实例
 
 	memblock_dump_all();
 }

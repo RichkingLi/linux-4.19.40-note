@@ -1222,12 +1222,15 @@ bool __init early_init_dt_verify(void *params)
 void __init early_init_dt_scan_nodes(void)
 {
 	/* Retrieve various information from the /chosen node */
+	//读取 /chosen节点信息，写入到boot_command_line
 	of_scan_flat_dt(early_init_dt_scan_chosen, boot_command_line);
 
 	/* Initialize {size,address}-cells info */
+	//初始化size-cells和address-cells信息
 	of_scan_flat_dt(early_init_dt_scan_root, NULL);
 
 	/* Setup memory, calling early_init_dt_add_memory_arch */
+	//调用函数early_init_dt_add_memory_arch设置内存
 	of_scan_flat_dt(early_init_dt_scan_memory, NULL);
 }
 

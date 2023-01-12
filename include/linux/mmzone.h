@@ -379,7 +379,7 @@ struct zone {
 	int node;
 #endif
 	struct pglist_data	*zone_pgdat;//指向内存节点的pglist_data实例
-	struct per_cpu_pageset __percpu *pageset;//每处理器页集合
+	struct per_cpu_pageset __percpu *pageset;//用于实现每个CPU的热/冷页帧列表
 
 #ifndef CONFIG_SPARSEMEM
 	/*
@@ -503,10 +503,11 @@ struct zone {
 	bool			contiguous;
 
 	ZONE_PADDING(_pad3_)
-	/* Zone statistics */
+	/* 内存域统计量 */
 	atomic_long_t		vm_stat[NR_VM_ZONE_STAT_ITEMS];
 	atomic_long_t		vm_numa_stat[NR_VM_NUMA_STAT_ITEMS];
 } ____cacheline_internodealigned_in_smp;
+//____cacheline_internodealigned_in_smp表示用以实现最优的高速缓存对齐方式
 
 enum pgdat_flags {
 	PGDAT_CONGESTED,		/* pgdat has many dirty pages backed by
@@ -654,9 +655,9 @@ typedef struct pglist_data {
 	unsigned long node_spanned_pages;//物理页范围总长度，包括空洞
 					     range, including holes */
 	int node_id;//节点标识符
-	wait_queue_head_t kswapd_wait;
+	wait_queue_head_t kswapd_wait;//交换守护进程等待队列，在将页帧换出结点时会用到
 	wait_queue_head_t pfmemalloc_wait;
-	struct task_struct *kswapd;	/* Protected by
+	struct task_struct *kswapd;	/*指向负责该结点的交换守护进程的 task_struct /*Protected by
 					   mem_hotplug_begin/end() */
 	int kswapd_order;
 	enum zone_type kswapd_classzone_idx;
@@ -666,7 +667,7 @@ typedef struct pglist_data {
 #ifdef CONFIG_COMPACTION
 	int kcompactd_max_order;
 	enum zone_type kcompactd_classzone_idx;
-	wait_queue_head_t kcompactd_wait;
+	wait_queue_head_t kcompactd_wait;//整理守护进程等待队列，在规整内存是用到
 	struct task_struct *kcompactd;
 #endif
 	/*

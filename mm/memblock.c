@@ -1676,6 +1676,8 @@ void __init memblock_cap_memory_range(phys_addr_t base, phys_addr_t size)
 	if (!size)
 		return;
 
+	//在memory类型的所有内存中隔离出[base,base+size]的内存，
+	//起始地址和结束地址放到start_rgnh和end_rgn，返回区间个数
 	ret = memblock_isolate_range(&memblock.memory, base, size,
 						&start_rgn, &end_rgn);
 	if (ret)

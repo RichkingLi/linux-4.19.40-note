@@ -518,7 +518,7 @@ static void __init mm_init(void)
 	 */
 	page_ext_init_flatmem();
 	mem_init();
-	kmem_cache_init();
+	kmem_cache_init();// 初始化内核内部用于小块内存区的分配器
 	pgtable_init();
 	vmalloc_init();
 	ioremap_huge_init();
@@ -560,11 +560,11 @@ asmlinkage __visible void __init start_kernel(void)
 	mm_init_cpumask(&init_mm);
 	setup_command_line(command_line);
 	setup_nr_cpu_ids();
-	setup_per_cpu_areas();
+	setup_per_cpu_areas();//初始化源代码中定义的静态 per-cpu变量
 	smp_prepare_boot_cpu();	/* arch-specific boot-cpu hooks */
 	boot_cpu_hotplug_init();
 
-	build_all_zonelists(NULL);
+	build_all_zonelists(NULL);// 建立结点和内存域的数据结构
 	page_alloc_init();
 
 	pr_notice("Kernel command line: %s\n", boot_command_line);
@@ -691,7 +691,7 @@ asmlinkage __visible void __init start_kernel(void)
 #endif
 	kmemleak_init();
 	debug_objects_mem_init();
-	setup_per_cpu_pageset();
+	setup_per_cpu_pageset();//为 pageset 数组的第一个数组元素分配内存
 	numa_policy_init();
 	acpi_early_init();
 	if (late_time_init)

@@ -57,7 +57,7 @@ modules.builtin
 /vmlinuz
 /System.map
 /Module.markers
-
+/linux-4.19.40-note.si4project/
 #
 # RPM spec file (make rpm-pkg)
 #
